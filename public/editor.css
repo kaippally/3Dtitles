@@ -1,0 +1,319 @@
+/* ── Reset & variables ─────────────────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0d1117;
+  --surface:  #161b22;
+  --surface2: #21262d;
+  --border:   #30363d;
+  --text:     #c9d1d9;
+  --muted:    #8b949e;
+  --accent:   #58a6ff;
+  --danger:   #f85149;
+  --warn:     #e3b341;
+  --radius:   8px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Header ────────────────────────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--accent);
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
+.filename {
+  color: var(--muted);
+  font-size: 13px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filename.dirty::after {
+  content: " *";
+  color: var(--warn);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────────── */
+.hbtn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  text-decoration: none;
+  display: inline-block;
+}
+.hbtn:hover { background: var(--border); }
+
+.hbtn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0d1117;
+  font-weight: 600;
+}
+.hbtn.primary:hover { opacity: .9; }
+
+.hbtn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ── Layout ────────────────────────────────────────────────────────────────── */
+.main { display: flex; flex: 1; overflow: hidden; }
+
+.tracks-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* ── Preview panel ─────────────────────────────────────────────────────────── */
+.preview-panel {
+  width: 360px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-title {
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  border-bottom: 1px solid var(--border);
+}
+
+#previewCanvas {
+  flex: 1;
+  background: #111;
+  display: block;
+  width: 100%;
+}
+
+.preview-controls {
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+.preview-controls button { flex: 1; }
+
+/* ── Track cards ───────────────────────────────────────────────────────────── */
+.track {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color .15s;
+}
+.track.active { border-color: var(--accent); }
+
+.track-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+}
+
+.track-num   { font-weight: 700; font-size: 12px; color: var(--muted); min-width: 20px; }
+.track-label { flex: 1; font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.anim-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* toggle switch */
+.tog {
+  width: 36px; height: 20px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  background: var(--border);
+  flex-shrink: 0;
+  position: relative;
+  appearance: none;
+  transition: background .2s;
+}
+.tog.on { background: var(--accent); }
+.tog::after {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .2s;
+}
+.tog.on::after { transform: translateX(16px); }
+
+/* track body / form rows */
+.track-body { padding: 12px; display: grid; gap: 9px; }
+
+.row { display: flex; align-items: center; gap: 8px; }
+.row label { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 50px; }
+
+.row input[type=text] {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.row input[type=text]:focus { outline: none; border-color: var(--accent); }
+
+.row select {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.row select:focus { outline: none; border-color: var(--accent); }
+
+.row input[type=color] {
+  width: 34px; height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  background: none;
+  padding: 2px;
+}
+
+.row input[type=range]  { flex: 1; accent-color: var(--accent); }
+
+.row input[type=number] {
+  width: 68px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.val { font-size: 12px; color: var(--accent); min-width: 34px; text-align: right; }
+
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+/* ── Footer ────────────────────────────────────────────────────────────────── */
+footer {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 9px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.hint   { color: var(--muted); font-size: 12px; }
+.spacer { flex: 1; }
+
+/* ── Modals ────────────────────────────────────────────────────────────────── */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.7);
+  z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  min-width: 320px;
+  max-width: 460px;
+  width: 90%;
+}
+.modal h3 { margin-bottom: 14px; font-size: 15px; }
+
+.modal input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+.modal input:focus { outline: none; border-color: var(--accent); }
+
+.mlist {
+  list-style: none;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.mlist li {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.mlist li:hover { background: var(--surface2); }
+.mlist li span  { color: var(--muted); font-size: 12px; }
+
+.mbtns { display: flex; gap: 8px; justify-content: flex-end; }
+
+.hidden { display: none !important; }
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }

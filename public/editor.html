@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3D Title Editor</title>
+  <link rel="stylesheet" href="/editor.css">
+</head>
+<body>
+
+<header>
+  <span class="brand">🎬 3D Title Editor</span>
+  <span class="filename" id="fname">untitled</span>
+  <button class="hbtn" id="btnOpen">Open</button>
+  <button class="hbtn" id="btnSave">Save</button>
+  <button class="hbtn" id="btnSaveAs">Save As&hellip;</button>
+  <button class="hbtn" id="btnFonts">&#8635; Fonts</button>
+  <a class="hbtn" href="/display.html" target="_blank">&#9099; Display</a>
+</header>
+
+<div class="main">
+  <div class="tracks-panel" id="tracksPanel"></div>
+
+  <div class="preview-panel">
+    <div class="preview-title">Live Preview</div>
+    <canvas id="previewCanvas"></canvas>
+    <div class="preview-controls">
+      <button class="hbtn primary" id="btnTrigger">&#9654; Trigger</button>
+      <button class="hbtn danger"  id="btnReset">&#9632; Reset</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span class="hint">Changes auto-apply to display</span>
+  <div class="spacer"></div>
+  <button class="hbtn primary" id="btnTrigger2">&#9654; Trigger All</button>
+  <button class="hbtn danger"  id="btnReset2">&#9632; Reset</button>
+</footer>
+
+<!-- Open modal -->
+<div class="overlay hidden" id="openModal">
+  <div class="modal">
+    <h3>Open Scene</h3>
+    <ul class="mlist" id="savesList"></ul>
+    <div class="mbtns">
+      <button class="hbtn" id="btnCloseOpen">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Save As modal -->
+<div class="overlay hidden" id="saveAsModal">
+  <div class="modal">
+    <h3>Save As</h3>
+    <input type="text" id="saveAsName" placeholder="Scene name..." />
+    <div class="mbtns">
+      <button class="hbtn" id="btnCloseSaveAs">Cancel</button>
+      <button class="hbtn primary" id="btnDoSaveAs">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/loaders/FontLoader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/geometries/TextGeometry.js"></script>
+<script src="/editor.js"></script>
+</body>
+</html>
