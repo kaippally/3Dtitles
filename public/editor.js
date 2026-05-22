@@ -1015,11 +1015,11 @@ function schedulePush() {
   gPushTimer = setTimeout(pushState, 400);
 }
 
-function pushState() {
+function pushState(forcePlay) {
   gPushTimer = null;
-  if (!gState) return;
+  if (!gState) return Promise.resolve();
   var autoTriggerEl = $id('chkAutoTrigger');
-  var autoTrigger = autoTriggerEl ? autoTriggerEl.checked : true;
+  var autoTrigger = forcePlay !== undefined ? forcePlay : (autoTriggerEl ? autoTriggerEl.checked : true);
   var body = JSON.stringify(gState);
 
   var statePromise = fetch('/api/state?autoPlay=' + autoTrigger, {
@@ -1044,7 +1044,7 @@ function pushState() {
       })
     : Promise.resolve();
 
-  Promise.all([statePromise, savePromise]).catch(function (e) {
+  return Promise.all([statePromise, savePromise]).catch(function (e) {
     console.error('pushState error:', e);
   });
 }
@@ -1054,7 +1054,7 @@ function markDirty() { gDirty = true; $id('fname').classList.add('dirty'); }
 function clearDirty() { gDirty = false; $id('fname').classList.remove('dirty'); }
 function setFilename(n) { gFile = n; $id('fname').textContent = n || 'untitled'; clearDirty(); }
 
-function loadScene(name) {
+function loadScene(name, forcePlay) {
   fetch('/api/saves/' + encodeURIComponent(name))
     .then(function (r) {
       if (!r.ok) {
@@ -1069,7 +1069,7 @@ function loadScene(name) {
       setFilename(name);
       renderTracks();
       updateGlobalUI();
-      pushState();
+      pushState(forcePlay);
       refreshTemplates();
     })
     .catch(function (err) {
@@ -1574,14 +1574,31 @@ function initPreview() {
     }
     
     var scale = 130.37;
+    var chkShowGrid = $id('chkShowGrid');
+    var gridEnabled = chkShowGrid && chkShowGrid.checked;
+    var selGridSize = $id('selGridSize');
+    var gridSize = parseInt(selGridSize ? selGridSize.value : '50', 10);
     
     if (dragMode === 'translate') {
       var track = findTrack(dragTrackId);
       var dx = clickX - dragStartClickPos.x;
       var dy = clickY - dragStartClickPos.y;
       
-      track.xPos = dragStartTrackState.xPos + dx * 2.0 / scale;
-      track.yPos = dragStartTrackState.yPos - dy * 2.0 / scale;
+      var targetCx = (960 + dragStartTrackState.xPos * 0.5 * scale) + dx;
+      var targetCy = (540 - dragStartTrackState.yPos * 0.5 * scale) + dy;
+      
+      if (gridEnabled) {
+        var relX = targetCx - 960;
+        relX = Math.round(relX / gridSize) * gridSize;
+        targetCx = 960 + relX;
+        
+        var relY = targetCy - 540;
+        relY = Math.round(relY / gridSize) * gridSize;
+        targetCy = 540 + relY;
+      }
+      
+      track.xPos = (targetCx - 960) / (0.5 * scale);
+      track.yPos = (540 - targetCy) / (0.5 * scale);
       
       syncTrackSidebarInputs(track);
       schedulePush();
@@ -1620,6 +1637,11 @@ function initPreview() {
       
       var Cx = clickX;
       var Cy = clickY;
+      
+      if (gridEnabled) {
+        Cx = 960 + Math.round((Cx - 960) / gridSize) * gridSize;
+        Cy = 540 + Math.round((Cy - 540) / gridSize) * gridSize;
+      }
       
       var newW = Math.abs(Cx - Ax);
       var newH = Math.abs(Cy - Ay);
@@ -2028,8 +2050,18 @@ function refreshTemplates() {
           });
           li.appendChild(deleteBtn);
 
+          var clickTimeout = null;
           li.addEventListener('click', function () {
-            loadScene(name);
+            if (clickTimeout) {
+              clearTimeout(clickTimeout);
+              clickTimeout = null;
+              loadScene(name, true);
+            } else {
+              clickTimeout = setTimeout(function () {
+                clickTimeout = null;
+                loadScene(name);
+              }, 250);
+            }
           });
 
           list.appendChild(li);
