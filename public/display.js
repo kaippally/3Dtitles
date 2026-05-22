@@ -48,6 +48,22 @@ function easeOutBack(t) {
 let activeAudios = [];
 let activeTimeouts = [];
 
+function setOpacity(mesh, opacity) {
+  if (!mesh) return;
+  if (mesh.material) {
+    mesh.material.opacity = opacity;
+  }
+  mesh.traverse(child => {
+    if (child.isMesh && child.material) {
+      if (child.userData && child.userData.isShadow) {
+        child.material.opacity = opacity * (child.userData.baseOpacity !== undefined ? child.userData.baseOpacity : 0.8);
+      } else {
+        child.material.opacity = opacity;
+      }
+    }
+  });
+}
+
 function stopAllAudio() {
   activeAudios.forEach(audio => {
     try { audio.pause(); } catch (e) {}
@@ -134,8 +150,8 @@ function buildTrackMesh(track, cb) {
     loader.load(track.image, texture => {
       const img = texture.image;
       const aspect = img ? (img.width / img.height) : 1;
-      const w = track.size * aspect;
-      const h = track.size;
+      const w = (track.sizeX !== undefined ? track.sizeX : track.size) * aspect;
+      const h = (track.sizeY !== undefined ? track.sizeY : track.size);
       const geo = new THREE.PlaneGeometry(w, h);
       const mat = new THREE.MeshBasicMaterial({
         map: texture,
@@ -160,8 +176,46 @@ function buildTrackMesh(track, cb) {
       alignGeometry(geo, track.align || 'center');
       const colorVal = parseInt(track.color.replace('#', ''), 16);
       const mat = new THREE.MeshPhongMaterial({ color: colorVal, transparent: true, opacity: 0 });
-      const mesh = new THREE.Mesh(geo, mat);
-      cb(mesh);
+      const mainMesh = new THREE.Mesh(geo, mat);
+
+      if (track.shadowEnabled) {
+        const trackGroup = new THREE.Group();
+        trackGroup.add(mainMesh);
+
+        const shadowColorVal = parseInt((track.shadowColor || '#000000').replace('#', ''), 16);
+        const shadowBlur = track.shadowBlur !== undefined ? track.shadowBlur : 0.0;
+        const shadowDepth = track.shadowDepth !== undefined ? track.shadowDepth : 0.2;
+
+        const sx = shadowDepth * 0.1;
+        const sy = -shadowDepth * 0.1;
+        const sz = -0.02;
+
+        if (shadowBlur <= 0) {
+          const shadowMat = new THREE.MeshBasicMaterial({ color: shadowColorVal, transparent: true, opacity: 0 });
+          const shadowMesh = new THREE.Mesh(geo, shadowMat);
+          shadowMesh.position.set(sx, sy, sz);
+          shadowMesh.userData = { isShadow: true, baseOpacity: 0.8 };
+          trackGroup.add(shadowMesh);
+        } else {
+          const offsets = [
+            { x: sx, y: sy, baseOpacity: 0.3 },
+            { x: sx - shadowBlur * 0.02, y: sy + shadowBlur * 0.02, baseOpacity: 0.125 },
+            { x: sx + shadowBlur * 0.02, y: sy + shadowBlur * 0.02, baseOpacity: 0.125 },
+            { x: sx - shadowBlur * 0.02, y: sy - shadowBlur * 0.02, baseOpacity: 0.125 },
+            { x: sx + shadowBlur * 0.02, y: sy - shadowBlur * 0.02, baseOpacity: 0.125 }
+          ];
+          offsets.forEach(offset => {
+            const shadowMat = new THREE.MeshBasicMaterial({ color: shadowColorVal, transparent: true, opacity: 0 });
+            const shadowMesh = new THREE.Mesh(geo, shadowMat);
+            shadowMesh.position.set(offset.x, offset.y, sz);
+            shadowMesh.userData = { isShadow: true, baseOpacity: offset.baseOpacity };
+            trackGroup.add(shadowMesh);
+          });
+        }
+        cb(trackGroup);
+      } else {
+        cb(mainMesh);
+      }
     } catch (e) {
       console.error('[Display] TextGeometry error', e);
       cb(null);
@@ -242,7 +296,7 @@ function resetTimeline() {
   Object.values(trackMeshes).forEach(mesh => {
     if (!mesh) return;
     mesh.visible = false;
-    mesh.material.opacity = 0;
+    setOpacity(mesh, 0);
     mesh.rotation.set(0, 0, 0);
   });
 }
@@ -257,7 +311,7 @@ function animateLoop() {
       const d = mesh.userData;
       const elapsed = now - (animationStartTime + d.delay);
       if (elapsed < 0) {
-        mesh.visible = false; mesh.material.opacity = 0;
+        mesh.visible = false; setOpacity(mesh, 0);
       } else {
         mesh.visible = true;
         if (elapsed < ANIM_IN_DURATION) {
@@ -267,9 +321,9 @@ function animateLoop() {
         } else if (elapsed < ANIM_IN_DURATION + d.duration + ANIM_OUT_DURATION) {
           const tOut = (elapsed - ANIM_IN_DURATION - d.duration) / ANIM_OUT_DURATION;
           applyAnimationHold(mesh, d.animation, d.duration + (elapsed - ANIM_IN_DURATION - d.duration), d.baseX, d.baseY, d.baseZ || 0);
-          mesh.material.opacity = 1.0 - tOut;
+          setOpacity(mesh, 1.0 - tOut);
         } else {
-          mesh.visible = false; mesh.material.opacity = 0;
+          mesh.visible = false; setOpacity(mesh, 0);
         }
       }
     });
@@ -283,35 +337,35 @@ function applyAnimationIn(mesh, animId, t, baseX, baseY, baseZ) {
   switch (animId) {
     case 'crashLandTop':
       mesh.position.set(baseX, baseY + 10 * (1 - easeOutBounce(t)), baseZ);
-      mesh.material.opacity = Math.min(1.0, t * 5); break;
+      setOpacity(mesh, Math.min(1.0, t * 5)); break;
     case 'zipInRight':
       mesh.position.set(baseX + 15 * (1 - easeOutElastic(t)), baseY, baseZ);
-      mesh.material.opacity = Math.min(1.0, t * 4); break;
+      setOpacity(mesh, Math.min(1.0, t * 4)); break;
     case 'zipInSpin':
       mesh.position.set(baseX + 15 * (1 - easeOutBack(t)), baseY, baseZ);
       mesh.rotation.y = (1 - t) * Math.PI * 2;
-      mesh.material.opacity = Math.min(1.0, t * 4); break;
+      setOpacity(mesh, Math.min(1.0, t * 4)); break;
     case 'spinContinuous':
       mesh.position.set(baseX, baseY, baseZ);
       mesh.rotation.y = t * Math.PI * 2;
-      mesh.material.opacity = t; break;
+      setOpacity(mesh, t); break;
     case 'spinAndStop':
       mesh.position.set(baseX, baseY, baseZ);
       mesh.rotation.y = (1 - easeOutQuad(t)) * Math.PI * 4;
-      mesh.material.opacity = t; break;
+      setOpacity(mesh, t); break;
     case 'bounce':
       mesh.position.set(baseX, baseY + 3 * (1 - easeOutBounce(t)), baseZ);
-      mesh.material.opacity = Math.min(1.0, t * 5); break;
+      setOpacity(mesh, Math.min(1.0, t * 5)); break;
     case 'fadeIn':
       mesh.position.set(baseX, baseY, baseZ);
-      mesh.material.opacity = t; break;
+      setOpacity(mesh, t); break;
     default:
       mesh.position.set(baseX, baseY, baseZ);
-      mesh.material.opacity = 1.0; break;
+      setOpacity(mesh, 1.0); break;
   }
 }
 function applyAnimationHold(mesh, animId, elapsed, baseX, baseY, baseZ) {
-  mesh.material.opacity = 1.0; mesh.scale.set(1, 1, 1);
+  setOpacity(mesh, 1.0); mesh.scale.set(1, 1, 1);
   switch (animId) {
     case 'zipInSpin':
     case 'spinContinuous':

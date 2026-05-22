@@ -41,6 +41,26 @@ function updateTrackOutputText(track) {
   }
 }
 
+var gSelectedTrackId = null;
+
+function selectTrack(trackId) {
+  gSelectedTrackId = trackId;
+  
+  // Highlight the sidebar card
+  document.querySelectorAll('.track').forEach(function (el) {
+    el.classList.remove('selected-highlight');
+  });
+  if (trackId !== null) {
+    var card = document.getElementById('track-' + trackId);
+    if (card) {
+      card.classList.add('selected-highlight');
+    }
+  }
+  
+  // Redraw the preview canvas to update helpers
+  updatePreview();
+}
+
 /* ── Boot ──────────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function () {
   wireButtons();
@@ -132,16 +152,16 @@ function wireButtons() {
   $id('audioFileInput').addEventListener('change', function () {
     var file = this.files[0];
     if (!file) return;
-    
+
     var reader = new FileReader();
     reader.onload = function (e) {
       var base64Data = e.target.result;
-      
+
       var btn = $id('btnUploadAudio');
       var originalText = btn.textContent;
       btn.textContent = 'Uploading...';
       btn.disabled = true;
-      
+
       fetch('/api/audio/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -150,21 +170,21 @@ function wireButtons() {
           data: base64Data
         })
       })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        btn.textContent = originalText;
-        btn.disabled = false;
-        if (res.ok) {
-          openAudioModal(gActiveAudioTrackId, gActiveAudioField);
-        } else {
-          alert('Upload failed: ' + (res.error || 'unknown error'));
-        }
-      })
-      .catch(function (err) {
-        btn.textContent = originalText;
-        btn.disabled = false;
-        alert('Upload error: ' + err.message);
-      });
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          btn.textContent = originalText;
+          btn.disabled = false;
+          if (res.ok) {
+            openAudioModal(gActiveAudioTrackId, gActiveAudioField);
+          } else {
+            alert('Upload failed: ' + (res.error || 'unknown error'));
+          }
+        })
+        .catch(function (err) {
+          btn.textContent = originalText;
+          btn.disabled = false;
+          alert('Upload error: ' + err.message);
+        });
     };
     reader.readAsDataURL(file);
     this.value = '';
@@ -184,16 +204,16 @@ function wireButtons() {
   $id('imageFileInput').addEventListener('change', function () {
     var file = this.files[0];
     if (!file) return;
-    
+
     var reader = new FileReader();
     reader.onload = function (e) {
       var base64Data = e.target.result;
-      
+
       var btn = $id('btnUploadImage');
       var originalText = btn.textContent;
       btn.textContent = 'Uploading...';
       btn.disabled = true;
-      
+
       fetch('/api/image/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -202,21 +222,21 @@ function wireButtons() {
           data: base64Data
         })
       })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        btn.textContent = originalText;
-        btn.disabled = false;
-        if (res.ok) {
-          openImageModal(gActiveImageTrackId);
-        } else {
-          alert('Upload failed: ' + (res.error || 'unknown error'));
-        }
-      })
-      .catch(function (err) {
-        btn.textContent = originalText;
-        btn.disabled = false;
-        alert('Upload error: ' + err.message);
-      });
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          btn.textContent = originalText;
+          btn.disabled = false;
+          if (res.ok) {
+            openImageModal(gActiveImageTrackId);
+          } else {
+            alert('Upload failed: ' + (res.error || 'unknown error'));
+          }
+        })
+        .catch(function (err) {
+          btn.textContent = originalText;
+          btn.disabled = false;
+          alert('Upload error: ' + err.message);
+        });
     };
     reader.readAsDataURL(file);
     this.value = '';
@@ -272,10 +292,10 @@ function normalizeState(state) {
   if (!state.tracks) state.tracks = [];
 
   var defaultTracks = [
-    { id:1, enabled:true,  type:'text', text:'BREAKING NEWS', font:'helvetiker', color:'#ff4444', animation:'crashLandTop', size:1.0, depth:0.30, xPos:0.0, yPos: 1.8, zPos:0.0, delay:   0, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
-    { id:2, enabled:false, type:'text', text:'Price Drop',    font:'helvetiker', color:'#ffcc00', animation:'zipInRight',   size:0.8, depth:0.25, xPos:0.0, yPos: 0.0, zPos:0.0, delay: 800, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
-    { id:3, enabled:false, type:'text', text:'At WalMarts',   font:'helvetiker', color:'#44ff44', animation:'zipInSpin',    size:0.7, depth:0.20, xPos:0.0, yPos:-1.8, zPos:0.0, delay:1600, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
-    { id:4, enabled:false, type:'image', image:'', animation:'static', size:1.0, xPos:0.0, yPos:-1.8, zPos:0.0, delay:0, duration:0, audioStart: '', audioEnd: '' }
+    { id: 1, enabled: true, type: 'text', text: '', font: 'helvetiker', color: '#ff4444', animation: 'crashLandTop', size: 1.0, depth: 0.30, xPos: 0.0, yPos: 1.8, zPos: 0.0, delay: 0, duration: 0, bevel: true, align: 'center', audioStart: '', audioEnd: '' },
+    { id: 2, enabled: false, type: 'text', text: '', font: 'helvetiker', color: '#ffcc00', animation: 'zipInRight', size: 0.8, depth: 0.25, xPos: 0.0, yPos: 0.0, zPos: 0.0, delay: 800, duration: 0, bevel: true, align: 'center', audioStart: '', audioEnd: '' },
+    { id: 3, enabled: false, type: 'text', text: '', font: 'helvetiker', color: '#44ff44', animation: 'zipInSpin', size: 0.7, depth: 0.20, xPos: 0.0, yPos: -1.8, zPos: 0.0, delay: 1600, duration: 0, bevel: true, align: 'center', audioStart: '', audioEnd: '' },
+    { id: 4, enabled: false, type: 'image', image: '', animation: 'static', size: 1.0, xPos: 0.0, yPos: -1.8, zPos: 0.0, delay: 0, duration: 0, audioStart: '', audioEnd: '' }
   ];
 
   for (var i = 1; i <= 4; i++) {
@@ -318,6 +338,12 @@ function normalizeState(state) {
     if (t.yPos === undefined) t.yPos = 0.0;
     if (t.zPos === undefined) t.zPos = 0.0;
     if (t.size === undefined) t.size = 1.0;
+    if (t.sizeX === undefined) t.sizeX = t.size;
+    if (t.sizeY === undefined) t.sizeY = t.size;
+    if (t.shadowEnabled === undefined) t.shadowEnabled = false;
+    if (t.shadowDepth === undefined) t.shadowDepth = 0.2;
+    if (t.shadowBlur === undefined) t.shadowBlur = 0.0;
+    if (t.shadowColor === undefined) t.shadowColor = '#000000';
     if (t.depth === undefined) t.depth = 0.20;
     if (t.delay === undefined) t.delay = 0;
     if (t.duration === undefined) t.duration = 0;
@@ -347,14 +373,34 @@ function renderTracks() {
   var panel = $id('tracksPanel');
   panel.innerHTML = '';
   gState.tracks.forEach(function (t) {
-    panel.appendChild(buildTrack(t));
+    if (t.type === 'image') {
+      panel.appendChild(buildTrack(t));
+    }
   });
+  gState.tracks.forEach(function (t) {
+    if (t.type !== 'image') {
+      panel.appendChild(buildTrack(t));
+    }
+  });
+  // Maintain selection highlight
+  if (gSelectedTrackId !== null) {
+    var card = document.getElementById('track-' + gSelectedTrackId);
+    if (card) {
+      card.classList.add('selected-highlight');
+    }
+  }
 }
 
 function buildTrack(t) {
   var wrap = document.createElement('div');
   wrap.className = 'track' + (t.enabled ? ' active' : '');
   wrap.id = 'track-' + t.id;
+
+  wrap.addEventListener('click', function (e) {
+    if (gSelectedTrackId !== t.id) {
+      selectTrack(t.id);
+    }
+  }, true);
 
   var aOpts = PRESETS.map(function (p) {
     return '<option value="' + p.id + '"' + (t.animation === p.id ? ' selected' : '') + '>' + p.label + '</option>';
@@ -448,7 +494,10 @@ function buildTrack(t) {
     });
 
     wrap.querySelector('#ts-' + t.id).addEventListener('input', function () {
-      findTrack(t.id).size = parseFloat(this.value);
+      var track = findTrack(t.id);
+      track.size = parseFloat(this.value);
+      track.sizeX = track.size;
+      track.sizeY = track.size;
       wrap.querySelector('#vs-' + t.id).textContent = this.value;
       schedulePush();
     });
@@ -573,6 +622,16 @@ function buildTrack(t) {
     '<input type="text" id="tao-' + t.id + '" value="' + esc(t.audioEnd || '') + '" placeholder="Click to select Audio Out..." style="width:100%; cursor:pointer" readonly>' +
     '</div>' +
     '</div>' +
+    '<div class="row" style="gap:6px">' +
+    '<label style="min-width:auto;display:flex;align-items:center;gap:4px">' +
+    '<input type="checkbox" id="tse-' + t.id + '"' + (t.shadowEnabled ? ' checked' : '') + '> Shadow' +
+    '</label>' +
+    '<input type="color" id="tsc-' + t.id + '" value="' + (t.shadowColor || '#000000') + '" style="width:30px;height:24px;padding:0;border:none;margin-left:4px">' +
+    '<label style="min-width:auto;margin-left:4px">Depth</label>' +
+    '<input type="number" id="tsd-' + t.id + '" min="-2" max="2" step="0.05" value="' + (t.shadowDepth !== undefined ? t.shadowDepth : 0.2) + '" style="width:55px;height:24px;padding:2px">' +
+    '<label style="min-width:auto;margin-left:4px">Blur</label>' +
+    '<input type="number" id="tsb-' + t.id + '" min="0" max="5" step="0.1" value="' + (t.shadowBlur !== undefined ? t.shadowBlur : 0.0) + '" style="width:50px;height:24px;padding:2px">' +
+    '</div>' +
     '<div class="row">' +
     '<label>Delay</label>' +
     '<input type="number" id="tdy-' + t.id + '" value="' + t.delay + '" min="0" step="100"> ms' +
@@ -629,7 +688,10 @@ function buildTrack(t) {
   });
 
   wrap.querySelector('#ts-' + t.id).addEventListener('input', function () {
-    findTrack(t.id).size = parseFloat(this.value);
+    var track = findTrack(t.id);
+    track.size = parseFloat(this.value);
+    track.sizeX = track.size;
+    track.sizeY = track.size;
     wrap.querySelector('#vs-' + t.id).textContent = this.value;
     schedulePush();
   });
@@ -675,6 +737,26 @@ function buildTrack(t) {
     schedulePush();
   });
 
+  wrap.querySelector('#tse-' + t.id).addEventListener('change', function () {
+    findTrack(t.id).shadowEnabled = this.checked;
+    schedulePush();
+  });
+
+  wrap.querySelector('#tsc-' + t.id).addEventListener('input', function () {
+    findTrack(t.id).shadowColor = this.value;
+    schedulePush();
+  });
+
+  wrap.querySelector('#tsd-' + t.id).addEventListener('input', function () {
+    findTrack(t.id).shadowDepth = parseFloat(this.value) || 0;
+    schedulePush();
+  });
+
+  wrap.querySelector('#tsb-' + t.id).addEventListener('input', function () {
+    findTrack(t.id).shadowBlur = parseFloat(this.value) || 0;
+    schedulePush();
+  });
+
   wrap.querySelector('#tdy-' + t.id).addEventListener('input', function () {
     findTrack(t.id).delay = parseFloat(this.value) || 0;
     schedulePush();
@@ -710,34 +792,34 @@ function pushState() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(gState),
   })
-  .then(function (r) {
-    if (!r.ok) {
-      console.error('Error pushing state to server');
-    }
-    updatePreview();
+    .then(function (r) {
+      if (!r.ok) {
+        console.error('Error pushing state to server');
+      }
+      updatePreview();
 
-    // Auto-save if a template is loaded/saved
-    if (gFile) {
-      fetch('/api/saves/' + encodeURIComponent(gFile), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(gState),
-      })
-      .then(function (res) {
-        if (res.ok) {
-          clearDirty();
-        } else {
-          console.error('Auto-save failed');
-        }
-      })
-      .catch(function (err) {
-        console.error('Auto-save error:', err);
-      });
-    }
-  })
-  .catch(function (e) {
-    console.error('pushState error:', e);
-  });
+      // Auto-save if a template is loaded/saved
+      if (gFile) {
+        fetch('/api/saves/' + encodeURIComponent(gFile), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(gState),
+        })
+          .then(function (res) {
+            if (res.ok) {
+              clearDirty();
+            } else {
+              console.error('Auto-save failed');
+            }
+          })
+          .catch(function (err) {
+            console.error('Auto-save error:', err);
+          });
+      }
+    })
+    .catch(function (e) {
+      console.error('pushState error:', e);
+    });
 }
 
 /* ── File operations ───────────────────────────────────────────────────────── */
@@ -773,20 +855,20 @@ function fileSave() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(gState),
   })
-  .then(function (res) {
-    if (!res.ok) {
-      return res.json().then(function(err) { throw new Error(err.error || 'Server error'); });
-    }
-    return res.json();
-  })
-  .then(function () {
-    clearDirty();
-    refreshTemplates();
-    console.log('Saved successfully');
-  })
-  .catch(function (err) {
-    alert('Error saving template: ' + err.message);
-  });
+    .then(function (res) {
+      if (!res.ok) {
+        return res.json().then(function (err) { throw new Error(err.error || 'Server error'); });
+      }
+      return res.json();
+    })
+    .then(function () {
+      clearDirty();
+      refreshTemplates();
+      console.log('Saved successfully');
+    })
+    .catch(function (err) {
+      alert('Error saving template: ' + err.message);
+    });
 }
 
 function fileSaveAs() {
@@ -803,20 +885,20 @@ function doSaveAs() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(gState),
   })
-  .then(function (res) {
-    if (!res.ok) {
-      return res.json().then(function(err) { throw new Error(err.error || 'Server error'); });
-    }
-    return res.json();
-  })
-  .then(function () {
-    setFilename(name);
-    closeModal('saveAsModal');
-    refreshTemplates();
-  })
-  .catch(function (err) {
-    alert('Error saving template: ' + err.message);
-  });
+    .then(function (res) {
+      if (!res.ok) {
+        return res.json().then(function (err) { throw new Error(err.error || 'Server error'); });
+      }
+      return res.json();
+    })
+    .then(function () {
+      setFilename(name);
+      closeModal('saveAsModal');
+      refreshTemplates();
+    })
+    .catch(function (err) {
+      alert('Error saving template: ' + err.message);
+    });
 }
 
 function closeModal(mid) {
@@ -849,7 +931,7 @@ var gPreviewAudioObj = null;
 function openAudioModal(trackId, field) {
   gActiveAudioTrackId = trackId;
   gActiveAudioField = field;
-  
+
   fetch('/api/audio')
     .then(function (r) { return r.json(); })
     .then(function (files) {
@@ -864,7 +946,7 @@ function openAudioModal(trackId, field) {
           li.style.justifyContent = 'space-between';
           li.style.alignItems = 'center';
           li.style.padding = '8px 12px';
-          
+
           var nameSpan = document.createElement('span');
           nameSpan.textContent = filename;
           nameSpan.style.cursor = 'pointer';
@@ -873,7 +955,7 @@ function openAudioModal(trackId, field) {
             selectAudio('/audio/' + filename);
           });
           li.appendChild(nameSpan);
-          
+
           var playBtn = document.createElement('button');
           playBtn.className = 'hbtn';
           playBtn.style.padding = '2px 8px';
@@ -884,7 +966,7 @@ function openAudioModal(trackId, field) {
             togglePreviewAudio('/audio/' + filename, playBtn);
           });
           li.appendChild(playBtn);
-          
+
           list.appendChild(li);
         });
       }
@@ -901,13 +983,13 @@ function togglePreviewAudio(url, btn) {
       return;
     }
   }
-  
+
   document.querySelectorAll('#audioList button').forEach(function (b) {
     b.innerHTML = '▶';
   });
-  
+
   gPreviewAudioObj = new Audio(url);
-  gPreviewAudioObj.play().catch(function(e) { console.warn("Preview play blocked/failed:", e); });
+  gPreviewAudioObj.play().catch(function (e) { console.warn("Preview play blocked/failed:", e); });
   btn.innerHTML = '■';
   gPreviewAudioObj.onended = function () {
     btn.innerHTML = '▶';
@@ -952,7 +1034,7 @@ var gActiveImageTrackId = null;
 
 function openImageModal(trackId) {
   gActiveImageTrackId = trackId;
-  
+
   fetch('/api/images')
     .then(function (r) { return r.json(); })
     .then(function (files) {
@@ -967,7 +1049,7 @@ function openImageModal(trackId) {
           li.style.justifyContent = 'space-between';
           li.style.alignItems = 'center';
           li.style.padding = '8px 12px';
-          
+
           var nameSpan = document.createElement('span');
           nameSpan.textContent = filename;
           nameSpan.style.cursor = 'pointer';
@@ -976,7 +1058,7 @@ function openImageModal(trackId) {
             selectImage('/images/' + filename);
           });
           li.appendChild(nameSpan);
-          
+
           var imgPreview = document.createElement('img');
           imgPreview.src = '/images/' + filename;
           imgPreview.style.height = '24px';
@@ -984,7 +1066,7 @@ function openImageModal(trackId) {
           imgPreview.style.borderRadius = '2px';
           imgPreview.style.border = '1px solid var(--border)';
           li.appendChild(imgPreview);
-          
+
           list.appendChild(li);
         });
       }
@@ -1021,6 +1103,144 @@ function clearImageSelection() {
 /* ── Live preview ──────────────────────────────────────────────────────────── */
 var pvScene, pvCamera, pvRenderer, pvLoader, pvGroup;
 var pvMeshes = [null, null, null, null];
+var pvSelectionHelper = null;
+
+// Raycast helper to transform ray into pvGroup's local coordinate space
+function getLocalRay(raycaster) {
+  pvGroup.updateMatrixWorld();
+  var invMatrix = new THREE.Matrix4().copy(pvGroup.matrixWorld).invert();
+  var localOrigin = raycaster.ray.origin.clone().applyMatrix4(invMatrix);
+  var localDirection = raycaster.ray.direction.clone().transformDirection(invMatrix);
+  return new THREE.Ray(localOrigin, localDirection);
+}
+
+// Raycast helper to intersect local ray with the track's Z-plane
+function getLocalIntersection(raycaster, zPlane) {
+  var localRay = getLocalRay(raycaster);
+  if (Math.abs(localRay.direction.z) < 0.0001) return null;
+  var t = (zPlane - localRay.origin.z) / localRay.direction.z;
+  if (t < 0) return null;
+  return new THREE.Vector3().copy(localRay.origin).addScaledVector(localRay.direction, t);
+}
+
+// Traverse up parent chain to retrieve trackId
+function getTrackIdFromObject(obj) {
+  var curr = obj;
+  while (curr) {
+    if (curr.userData && curr.userData.trackId !== undefined) {
+      return curr.userData.trackId;
+    }
+    curr = curr.parent;
+  }
+  return null;
+}
+
+// Find local geometry bounds relative to object position
+function getTrackLocalBounds(mesh, track) {
+  if (track.type === 'image') {
+    if (mesh && mesh.geometry) {
+      mesh.geometry.computeBoundingBox();
+      var min = mesh.geometry.boundingBox.min;
+      var max = mesh.geometry.boundingBox.max;
+      return {
+        minX: min.x,
+        maxX: max.x,
+        minY: min.y,
+        maxY: max.y
+      };
+    }
+    return { minX: -0.5, maxX: 0.5, minY: -0.5, maxY: 0.5 };
+  } else {
+    var textMesh = mesh;
+    if (mesh instanceof THREE.Group) {
+      textMesh = mesh.children[0];
+    }
+    if (textMesh && textMesh.geometry) {
+      textMesh.geometry.computeBoundingBox();
+      var min = textMesh.geometry.boundingBox.min;
+      var max = textMesh.geometry.boundingBox.max;
+      return {
+        minX: min.x,
+        maxX: max.x,
+        minY: min.y,
+        maxY: max.y
+      };
+    }
+    return { minX: -0.5, maxX: 0.5, minY: -0.5, maxY: 0.5 };
+  }
+}
+
+// Draw outline box and resize handles for the selected track
+function drawSelectionHelper(mesh, track) {
+  if (!pvGroup) return;
+  if (pvSelectionHelper) {
+    pvGroup.remove(pvSelectionHelper);
+    pvSelectionHelper = null;
+  }
+
+  var bounds = getTrackLocalBounds(mesh, track);
+
+  var helperGroup = new THREE.Group();
+  helperGroup.position.copy(mesh.position);
+
+  // Outline Box
+  var boxGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(bounds.minX, bounds.maxY, 0.01),
+    new THREE.Vector3(bounds.maxX, bounds.maxY, 0.01),
+    new THREE.Vector3(bounds.maxX, bounds.minY, 0.01),
+    new THREE.Vector3(bounds.minX, bounds.minY, 0.01),
+    new THREE.Vector3(bounds.minX, bounds.maxY, 0.01)
+  ]);
+  var boxMat = new THREE.LineBasicMaterial({ color: 0x00a2ff });
+  var boxLine = new THREE.Line(boxGeo, boxMat);
+  helperGroup.add(boxLine);
+
+  // Corner handles
+  var handleGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
+  var handleMat = new THREE.MeshBasicMaterial({ color: 0x00a2ff, depthTest: false });
+
+  var corners = [
+    { name: 'TL', x: bounds.minX, y: bounds.maxY },
+    { name: 'TR', x: bounds.maxX, y: bounds.maxY },
+    { name: 'BL', x: bounds.minX, y: bounds.minY },
+    { name: 'BR', x: bounds.maxX, y: bounds.minY }
+  ];
+
+  corners.forEach(function (c) {
+    var handleMesh = new THREE.Mesh(handleGeo, handleMat);
+    handleMesh.position.set(c.x, c.y, 0.01);
+    handleMesh.userData = { isHandle: true, handleName: c.name, trackId: track.id };
+    helperGroup.add(handleMesh);
+  });
+
+  pvGroup.add(helperGroup);
+  pvSelectionHelper = helperGroup;
+}
+
+// Sync back changes made interactively to the sidebar inputs
+function syncTrackSidebarInputs(t) {
+  var card = document.getElementById('track-' + t.id);
+  if (!card) return;
+  var tx = card.querySelector('#tx-' + t.id);
+  if (tx) {
+    tx.value = t.xPos.toFixed(1);
+    var vx = card.querySelector('#vx-' + t.id);
+    if (vx) vx.textContent = t.xPos.toFixed(1);
+  }
+  var ty = card.querySelector('#ty-' + t.id);
+  if (ty) {
+    ty.value = t.yPos.toFixed(1);
+    var vy = card.querySelector('#vy-' + t.id);
+    if (vy) vy.textContent = t.yPos.toFixed(1);
+  }
+  var ts = card.querySelector('#ts-' + t.id);
+  if (ts) {
+    ts.value = t.size.toFixed(2);
+    var vs = card.querySelector('#vs-' + t.id);
+    if (vs) vs.textContent = t.size.toFixed(2);
+  }
+}
+
 function initPreview() {
   if (typeof THREE === 'undefined') {
     console.warn('Three.js not loaded yet — preview unavailable');
@@ -1045,36 +1265,252 @@ function initPreview() {
 
   pvLoader = new THREE.FontLoader();
 
-  // Drag interaction for rotation
-  var isDragging = false;
+  // Interaction variables
+  var dragMode = null; // 'rotate', 'translate', 'resize'
+  var dragTrackId = null;
+  var dragHandleName = null;
+  var dragStartIntersection = null;
+  var dragStartTrackState = null;
   var previousPointerPosition = { x: 0, y: 0 };
 
   canvas.style.cursor = 'grab';
 
   canvas.addEventListener('pointerdown', function (e) {
-    isDragging = true;
+    var rect = canvas.getBoundingClientRect();
+    var mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    var mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    var raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), pvCamera);
+
+    // 1. Check if we hit a handle of the selected track
+    var handles = [];
+    if (pvSelectionHelper) {
+      pvSelectionHelper.traverse(function (child) {
+        if (child.userData && child.userData.isHandle) {
+          handles.push(child);
+        }
+      });
+    }
+    var intersectsHandles = raycaster.intersectObjects(handles);
+    if (intersectsHandles.length > 0) {
+      var handleObj = intersectsHandles[0].object;
+      dragMode = 'resize';
+      dragTrackId = handleObj.userData.trackId;
+      dragHandleName = handleObj.userData.handleName;
+
+      var track = findTrack(dragTrackId);
+      dragStartTrackState = JSON.parse(JSON.stringify(track));
+      dragStartIntersection = getLocalIntersection(raycaster, (track.zPos !== undefined ? track.zPos : 0.0) * 0.5);
+
+      canvas.setPointerCapture(e.pointerId);
+      canvas.style.cursor = 'pointer';
+      e.stopPropagation();
+      return;
+    }
+
+    // 2. Check if we hit a track mesh
+    var meshObjects = [];
+    pvMeshes.forEach(function (mesh) {
+      if (mesh) meshObjects.push(mesh);
+    });
+    var intersectsMeshes = raycaster.intersectObjects(meshObjects, true);
+    if (intersectsMeshes.length > 0) {
+      var trackId = getTrackIdFromObject(intersectsMeshes[0].object);
+      if (trackId !== null) {
+        dragMode = 'translate';
+        dragTrackId = trackId;
+
+        var track = findTrack(dragTrackId);
+        dragStartTrackState = JSON.parse(JSON.stringify(track));
+        dragStartIntersection = getLocalIntersection(raycaster, (track.zPos !== undefined ? track.zPos : 0.0) * 0.5);
+
+        selectTrack(trackId);
+
+        canvas.setPointerCapture(e.pointerId);
+        canvas.style.cursor = 'move';
+        e.stopPropagation();
+        return;
+      }
+    }
+
+    // 3. Hit background
+    dragMode = 'rotate';
     previousPointerPosition = { x: e.clientX, y: e.clientY };
+    selectTrack(null);
     canvas.setPointerCapture(e.pointerId);
     canvas.style.cursor = 'grabbing';
   });
 
   canvas.addEventListener('pointermove', function (e) {
-    if (!isDragging) return;
-    var deltaX = e.clientX - previousPointerPosition.x;
-    var deltaY = e.clientY - previousPointerPosition.y;
+    var rect = canvas.getBoundingClientRect();
+    var mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    var mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
-    if (pvGroup) {
-      pvGroup.rotation.y += deltaX * 0.01;
-      pvGroup.rotation.x += deltaY * 0.01;
+    var raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), pvCamera);
+
+    if (!dragMode) {
+      // Hover cursor updates when not dragging
+      var handles = [];
+      if (pvSelectionHelper) {
+        pvSelectionHelper.traverse(function (child) {
+          if (child.userData && child.userData.isHandle) {
+            handles.push(child);
+          }
+        });
+      }
+      var intersectsHandles = raycaster.intersectObjects(handles);
+      if (intersectsHandles.length > 0) {
+        canvas.style.cursor = 'pointer';
+        return;
+      }
+
+      var meshObjects = [];
+      pvMeshes.forEach(function (mesh) {
+        if (mesh) meshObjects.push(mesh);
+      });
+      var intersectsMeshes = raycaster.intersectObjects(meshObjects, true);
+      if (intersectsMeshes.length > 0) {
+        canvas.style.cursor = 'move';
+        return;
+      }
+
+      canvas.style.cursor = 'grab';
+      return;
     }
 
-    previousPointerPosition = { x: e.clientX, y: e.clientY };
+    if (dragMode === 'rotate') {
+      var deltaX = e.clientX - previousPointerPosition.x;
+      var deltaY = e.clientY - previousPointerPosition.y;
+
+      if (pvGroup) {
+        pvGroup.rotation.y += deltaX * 0.01;
+        pvGroup.rotation.x += deltaY * 0.01;
+      }
+
+      previousPointerPosition = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
+    if (dragMode === 'translate') {
+      var currentIntersection = getLocalIntersection(raycaster, (dragStartTrackState.zPos !== undefined ? dragStartTrackState.zPos : 0.0) * 0.5);
+      if (currentIntersection && dragStartIntersection) {
+        var deltaX = currentIntersection.x - dragStartIntersection.x;
+        var deltaY = currentIntersection.y - dragStartIntersection.y;
+
+        var track = findTrack(dragTrackId);
+        track.xPos = dragStartTrackState.xPos + deltaX * 2.0;
+        track.yPos = dragStartTrackState.yPos + deltaY * 2.0;
+
+        syncTrackSidebarInputs(track);
+        schedulePush();
+      }
+      return;
+    }
+
+    if (dragMode === 'resize') {
+      var currentIntersection = getLocalIntersection(raycaster, (dragStartTrackState.zPos !== undefined ? dragStartTrackState.zPos : 0.0) * 0.5);
+      if (currentIntersection && dragStartIntersection) {
+        var origMesh = null;
+        for (var idx = 0; idx < gState.tracks.length; idx++) {
+          if (gState.tracks[idx].id === dragTrackId) {
+            origMesh = pvMeshes[idx];
+            break;
+          }
+        }
+        if (!origMesh) return;
+
+        var origBounds = getTrackLocalBounds(origMesh, dragStartTrackState);
+        var origW = Math.abs(origBounds.maxX - origBounds.minX);
+        var origH = Math.abs(origBounds.maxY - origBounds.minY);
+
+        // Compute initial corners in local space
+        var sx = dragStartTrackState.xPos * 0.5;
+        var sy = dragStartTrackState.yPos * 0.5;
+        var x_TL = sx + origBounds.minX;
+        var y_TL = sy + origBounds.maxY;
+        var x_TR = sx + origBounds.maxX;
+        var y_TR = sy + origBounds.maxY;
+        var x_BL = sx + origBounds.minX;
+        var y_BL = sy + origBounds.minY;
+        var x_BR = sx + origBounds.maxX;
+        var y_BR = sy + origBounds.minY;
+
+        var Ax = 0, Ay = 0; // Anchor corner (opposite of dragged)
+        var Dx = 0, Dy = 0; // Dragged corner original
+
+        if (dragHandleName === 'TL') {
+          Ax = x_BR; Ay = y_BR;
+          Dx = x_TL; Dy = y_TL;
+        } else if (dragHandleName === 'TR') {
+          Ax = x_BL; Ay = y_BL;
+          Dx = x_TR; Dy = y_TR;
+        } else if (dragHandleName === 'BL') {
+          Ax = x_TR; Ay = y_TR;
+          Dx = x_BL; Dy = y_BL;
+        } else if (dragHandleName === 'BR') {
+          Ax = x_TL; Ay = y_TL;
+          Dx = x_BR; Dy = y_BR;
+        }
+
+        var Cx = currentIntersection.x;
+        var Cy = currentIntersection.y;
+
+        var newW = Math.abs(Cx - Ax);
+        var newH = Math.abs(Cy - Ay);
+
+        var keepAspect = (dragStartTrackState.type === 'text') || e.ctrlKey || e.metaKey;
+        var signX = Cx > Ax ? 1 : -1;
+        var signY = Cy > Ay ? 1 : -1;
+
+        if (keepAspect) {
+          var diagX = signX * origW;
+          var diagY = signY * origH;
+          var dot = (Cx - Ax) * diagX + (Cy - Ay) * diagY;
+          var diagLenSq = diagX * diagX + diagY * diagY;
+          var tDiag = Math.max(0.01, dot / diagLenSq);
+          newW = tDiag * origW;
+          newH = tDiag * origH;
+        }
+
+        var newDx = Ax + signX * newW;
+        var newDy = Ay + signY * newH;
+
+        var newCenterX = (Ax + newDx) / 2;
+        var newCenterY = (Ay + newDy) / 2;
+
+        var track = findTrack(dragTrackId);
+        var scaleX = newW / origW;
+
+        if (track.type === 'text') {
+          track.size = dragStartTrackState.size * scaleX;
+          track.sizeX = track.size;
+          track.sizeY = track.size;
+        } else {
+          var aspect = origMesh.userData.aspect || 1;
+          track.sizeX = newW / aspect;
+          track.sizeY = newH;
+          track.size = track.sizeY;
+        }
+
+        track.xPos = newCenterX * 2;
+        track.yPos = newCenterY * 2;
+
+        syncTrackSidebarInputs(track);
+        schedulePush();
+      }
+    }
   });
 
   var stopDrag = function (e) {
-    if (!isDragging) return;
-    isDragging = false;
+    if (!dragMode) return;
     canvas.releasePointerCapture(e.pointerId);
+    dragMode = null;
+    dragTrackId = null;
+    dragHandleName = null;
+    dragStartIntersection = null;
+    dragStartTrackState = null;
     canvas.style.cursor = 'grab';
   };
 
@@ -1099,7 +1535,7 @@ function resizePreview() {
     if (parts.length === 2) aspectParts = parts;
   }
   var targetRatio = parseFloat(aspectParts[0]) / parseFloat(aspectParts[1]);
-  var padding = 24; 
+  var padding = 24;
   var maxW = container.clientWidth - padding;
   var maxH = container.clientHeight - padding;
   if (maxW <= 0 || maxH <= 0) {
@@ -1132,6 +1568,12 @@ function pvAnimLoop() {
 
 function updatePreview() {
   if (!pvScene || !gState) return;
+
+  if (pvSelectionHelper) {
+    if (pvGroup) pvGroup.remove(pvSelectionHelper);
+    pvSelectionHelper = null;
+  }
+
   gState.tracks.forEach(function (t, i) {
     if (pvMeshes[i]) { if (pvGroup) pvGroup.remove(pvMeshes[i]); pvMeshes[i] = null; }
     if (!t.enabled) return;
@@ -1145,8 +1587,8 @@ function updatePreview() {
 
         var img = texture.image;
         var aspect = img ? (img.width / img.height) : 1;
-        var w = t.size * aspect;
-        var h = t.size;
+        var w = (t.sizeX !== undefined ? t.sizeX : t.size) * aspect;
+        var h = (t.sizeY !== undefined ? t.sizeY : t.size);
         var geo = new THREE.PlaneGeometry(w, h);
 
         var mat = new THREE.MeshBasicMaterial({
@@ -1155,15 +1597,20 @@ function updatePreview() {
           opacity: 1,
           side: THREE.DoubleSide
         });
-        
+
         var mesh = new THREE.Mesh(geo, mat);
         mesh.position.x = (t.xPos !== undefined ? t.xPos : 0.0) * 0.5;
         mesh.position.y = t.yPos * 0.5;
         mesh.position.z = (t.zPos !== undefined ? t.zPos : 0.0) * 0.5;
+        mesh.userData = { trackId: t.id, aspect: aspect };
 
         if (pvMeshes[i]) { if (pvGroup) pvGroup.remove(pvMeshes[i]); }
         if (pvGroup) pvGroup.add(mesh);
         pvMeshes[i] = mesh;
+
+        if (gSelectedTrackId === t.id) {
+          drawSelectionHelper(mesh, t);
+        }
       }, undefined, function (err) {
         console.error('Failed to load preview texture:', t.image, err);
       });
@@ -1174,12 +1621,59 @@ function updatePreview() {
     var addMesh = function (geo) {
       if (!geo) return;
       var mat = new THREE.MeshPhongMaterial({ color: col, transparent: true, opacity: 1 });
-      var mesh = new THREE.Mesh(geo, mat);
-      mesh.position.x = (t.xPos !== undefined ? t.xPos : 0.0) * 0.5;
-      mesh.position.y = t.yPos * 0.5;
-      mesh.position.z = (t.zPos !== undefined ? t.zPos : 0.0) * 0.5;
-      if (pvGroup) pvGroup.add(mesh);
-      pvMeshes[i] = mesh;
+      var mainMesh = new THREE.Mesh(geo, mat);
+
+      var meshToAdd;
+      if (t.shadowEnabled) {
+        var trackGroup = new THREE.Group();
+        trackGroup.add(mainMesh);
+
+        var shadowColorVal = parseInt((t.shadowColor || '#000000').replace('#', ''), 16);
+        var shadowBlur = t.shadowBlur !== undefined ? t.shadowBlur : 0.0;
+        var shadowDepth = t.shadowDepth !== undefined ? t.shadowDepth : 0.2;
+
+        var sx = shadowDepth * 0.1;
+        var sy = -shadowDepth * 0.1;
+        var sz = -0.02;
+
+        if (shadowBlur <= 0) {
+          var shadowMat = new THREE.MeshBasicMaterial({ color: shadowColorVal, transparent: true, opacity: 0.8 });
+          var shadowMesh = new THREE.Mesh(geo, shadowMat);
+          shadowMesh.position.set(sx, sy, sz);
+          shadowMesh.userData = { isShadow: true, baseOpacity: 0.8 };
+          trackGroup.add(shadowMesh);
+        } else {
+          var offsets = [
+            { x: sx, y: sy, baseOpacity: 0.3 },
+            { x: sx - shadowBlur * 0.02, y: sy + shadowBlur * 0.02, baseOpacity: 0.125 },
+            { x: sx + shadowBlur * 0.02, y: sy + shadowBlur * 0.02, baseOpacity: 0.125 },
+            { x: sx - shadowBlur * 0.02, y: sy - shadowBlur * 0.02, baseOpacity: 0.125 },
+            { x: sx + shadowBlur * 0.02, y: sy - shadowBlur * 0.02, baseOpacity: 0.125 }
+          ];
+          offsets.forEach(function (offset) {
+            var shadowMat = new THREE.MeshBasicMaterial({ color: shadowColorVal, transparent: true, opacity: offset.baseOpacity });
+            var shadowMesh = new THREE.Mesh(geo, shadowMat);
+            shadowMesh.position.set(offset.x, offset.y, sz);
+            shadowMesh.userData = { isShadow: true, baseOpacity: offset.baseOpacity };
+            trackGroup.add(shadowMesh);
+          });
+        }
+        meshToAdd = trackGroup;
+      } else {
+        meshToAdd = mainMesh;
+      }
+
+      meshToAdd.position.x = (t.xPos !== undefined ? t.xPos : 0.0) * 0.5;
+      meshToAdd.position.y = t.yPos * 0.5;
+      meshToAdd.position.z = (t.zPos !== undefined ? t.zPos : 0.0) * 0.5;
+      meshToAdd.userData = { trackId: t.id };
+
+      if (pvGroup) pvGroup.add(meshToAdd);
+      pvMeshes[i] = meshToAdd;
+
+      if (gSelectedTrackId === t.id) {
+        drawSelectionHelper(meshToAdd, t);
+      }
     };
 
     loadFontShared(pvLoader, t.font, function (font) {
@@ -1320,20 +1814,20 @@ function deleteTemplate(name) {
   fetch('/api/saves/' + encodeURIComponent(name), {
     method: 'DELETE'
   })
-  .then(function (r) { return r.json(); })
-  .then(function (res) {
-    if (res.ok) {
-      if (gFile === name) {
-        setFilename(null);
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      if (res.ok) {
+        if (gFile === name) {
+          setFilename(null);
+        }
+        refreshTemplates();
+      } else {
+        alert('Delete failed');
       }
-      refreshTemplates();
-    } else {
-      alert('Delete failed');
-    }
-  })
-  .catch(function (err) {
-    alert('Error deleting template: ' + err.message);
-  });
+    })
+    .catch(function (err) {
+      alert('Error deleting template: ' + err.message);
+    });
 }
 
 function filterTemplates(query) {

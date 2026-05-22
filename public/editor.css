@@ -155,6 +155,10 @@ header {
   transition: border-color .15s;
 }
 .track.active { border-color: var(--accent); }
+.track.selected-highlight {
+  border-color: #00a2ff !important;
+  box-shadow: 0 0 8px rgba(0, 162, 255, 0.4);
+}
 
 .track-header {
   display: flex;
