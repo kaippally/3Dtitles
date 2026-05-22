@@ -164,6 +164,7 @@ function rebuildScene() {
         id: track.id,
         baseX: (track.xPos !== undefined ? track.xPos : 0.0) * 0.5,
         baseY: track.yPos * 0.5,
+        baseZ: (track.zPos !== undefined ? track.zPos : 0.0) * 0.5,
         delay: track.delay || 0,
         duration: track.duration || 0,
         animation: track.animation || 'static',
@@ -235,12 +236,12 @@ function animateLoop() {
       } else {
         mesh.visible = true;
         if (elapsed < ANIM_IN_DURATION) {
-          applyAnimationIn(mesh, d.animation, elapsed / ANIM_IN_DURATION, d.baseX, d.baseY);
+          applyAnimationIn(mesh, d.animation, elapsed / ANIM_IN_DURATION, d.baseX, d.baseY, d.baseZ || 0);
         } else if (d.duration === 0 || elapsed < ANIM_IN_DURATION + d.duration) {
-          applyAnimationHold(mesh, d.animation, elapsed - ANIM_IN_DURATION, d.baseX, d.baseY);
+          applyAnimationHold(mesh, d.animation, elapsed - ANIM_IN_DURATION, d.baseX, d.baseY, d.baseZ || 0);
         } else if (elapsed < ANIM_IN_DURATION + d.duration + ANIM_OUT_DURATION) {
           const tOut = (elapsed - ANIM_IN_DURATION - d.duration) / ANIM_OUT_DURATION;
-          applyAnimationHold(mesh, d.animation, d.duration + (elapsed - ANIM_IN_DURATION - d.duration), d.baseX, d.baseY);
+          applyAnimationHold(mesh, d.animation, d.duration + (elapsed - ANIM_IN_DURATION - d.duration), d.baseX, d.baseY, d.baseZ || 0);
           mesh.material.opacity = 1.0 - tOut;
         } else {
           mesh.visible = false; mesh.material.opacity = 0;
@@ -252,50 +253,50 @@ function animateLoop() {
 }
 
 /* ── Animation applicators ────────────────────────────────────────────────── */
-function applyAnimationIn(mesh, animId, t, baseX, baseY) {
+function applyAnimationIn(mesh, animId, t, baseX, baseY, baseZ) {
   mesh.scale.set(1, 1, 1); mesh.rotation.set(0, 0, 0);
   switch (animId) {
     case 'crashLandTop':
-      mesh.position.set(baseX, baseY + 10 * (1 - easeOutBounce(t)), 0);
+      mesh.position.set(baseX, baseY + 10 * (1 - easeOutBounce(t)), baseZ);
       mesh.material.opacity = Math.min(1.0, t * 5); break;
     case 'zipInRight':
-      mesh.position.set(baseX + 15 * (1 - easeOutElastic(t)), baseY, 0);
+      mesh.position.set(baseX + 15 * (1 - easeOutElastic(t)), baseY, baseZ);
       mesh.material.opacity = Math.min(1.0, t * 4); break;
     case 'zipInSpin':
-      mesh.position.set(baseX + 15 * (1 - easeOutBack(t)), baseY, 0);
+      mesh.position.set(baseX + 15 * (1 - easeOutBack(t)), baseY, baseZ);
       mesh.rotation.y = (1 - t) * Math.PI * 2;
       mesh.material.opacity = Math.min(1.0, t * 4); break;
     case 'spinContinuous':
-      mesh.position.set(baseX, baseY, 0);
+      mesh.position.set(baseX, baseY, baseZ);
       mesh.rotation.y = t * Math.PI * 2;
       mesh.material.opacity = t; break;
     case 'spinAndStop':
-      mesh.position.set(baseX, baseY, 0);
+      mesh.position.set(baseX, baseY, baseZ);
       mesh.rotation.y = (1 - easeOutQuad(t)) * Math.PI * 4;
       mesh.material.opacity = t; break;
     case 'bounce':
-      mesh.position.set(baseX, baseY + 3 * (1 - easeOutBounce(t)), 0);
+      mesh.position.set(baseX, baseY + 3 * (1 - easeOutBounce(t)), baseZ);
       mesh.material.opacity = Math.min(1.0, t * 5); break;
     case 'fadeIn':
-      mesh.position.set(baseX, baseY, 0);
+      mesh.position.set(baseX, baseY, baseZ);
       mesh.material.opacity = t; break;
     default:
-      mesh.position.set(baseX, baseY, 0);
+      mesh.position.set(baseX, baseY, baseZ);
       mesh.material.opacity = 1.0; break;
   }
 }
-function applyAnimationHold(mesh, animId, elapsed, baseX, baseY) {
+function applyAnimationHold(mesh, animId, elapsed, baseX, baseY, baseZ) {
   mesh.material.opacity = 1.0; mesh.scale.set(1, 1, 1);
   switch (animId) {
     case 'zipInSpin':
     case 'spinContinuous':
-      mesh.position.set(baseX, baseY, 0);
+      mesh.position.set(baseX, baseY, baseZ);
       mesh.rotation.y = (elapsed / 1000) * 1.5; break;
     case 'bounce':
-      mesh.position.set(baseX, baseY + Math.abs(Math.sin(elapsed * 0.005)) * 0.4, 0);
+      mesh.position.set(baseX, baseY + Math.abs(Math.sin(elapsed * 0.005)) * 0.4, baseZ);
       mesh.rotation.set(0, 0, 0); break;
     default:
-      mesh.position.set(baseX, baseY, 0);
+      mesh.position.set(baseX, baseY, baseZ);
       mesh.rotation.set(0, 0, 0); break;
   }
 }

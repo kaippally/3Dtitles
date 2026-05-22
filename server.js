@@ -61,9 +61,9 @@ app.get('/display', (_, res) => res.sendFile(path.join(PUBLIC, 'display.html')))
 let appState = {
   aspectRatio: '1920x1080',
   tracks: [
-    { id:1, enabled:true,  text:'BREAKING NEWS', outputText:'BREAKING NEWS', font:'helvetiker', color:'#ff4444', animation:'crashLandTop',   size:1.0, depth:0.30, xPos:0.0, yPos: 1.8, delay:   0, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
-    { id:2, enabled:false, text:'Price Drop',    outputText:'Price Drop',    font:'helvetiker', color:'#ffcc00', animation:'zipInRight',     size:0.8, depth:0.25, xPos:0.0, yPos: 0.0, delay: 800, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
-    { id:3, enabled:false, text:'At WalMarts',   outputText:'At WalMarts',   font:'helvetiker', color:'#44ff44', animation:'zipInSpin',      size:0.7, depth:0.20, xPos:0.0, yPos:-1.8, delay:1600, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
+    { id:1, enabled:true,  text:'BREAKING NEWS', outputText:'BREAKING NEWS', font:'helvetiker', color:'#ff4444', animation:'crashLandTop',   size:1.0, depth:0.30, xPos:0.0, yPos: 1.8, zPos:0.0, delay:   0, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
+    { id:2, enabled:false, text:'Price Drop',    outputText:'Price Drop',    font:'helvetiker', color:'#ffcc00', animation:'zipInRight',     size:0.8, depth:0.25, xPos:0.0, yPos: 0.0, zPos:0.0, delay: 800, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
+    { id:3, enabled:false, text:'At WalMarts',   outputText:'At WalMarts',   font:'helvetiker', color:'#44ff44', animation:'zipInSpin',      size:0.7, depth:0.20, xPos:0.0, yPos:-1.8, zPos:0.0, delay:1600, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
   ],
 };
 

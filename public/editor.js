@@ -103,12 +103,15 @@ function wireButtons() {
   });
 
 
-  // Pause spin toggle
-  $id('btnPauseSpin').addEventListener('click', function () {
-    gSpinPaused = !gSpinPaused;
-    this.innerHTML = gSpinPaused ? '&#9654; Resume Spin' : '&#10074;&#10074; Pause Spin';
-    this.classList.toggle('active', gSpinPaused);
-  });
+  // Reset view rotation
+  var btnResetView = $id('btnResetView');
+  if (btnResetView) {
+    btnResetView.addEventListener('click', function () {
+      if (pvGroup) {
+        pvGroup.rotation.set(0, 0, 0);
+      }
+    });
+  }
 
   // Audio picker modal buttons wiring
   $id('btnCloseAudio').addEventListener('click', function () {
@@ -221,6 +224,7 @@ function fetchState(cb) {
           gState.tracks.forEach(function (t) {
             updateTrackOutputText(t);
             if (t.xPos === undefined) t.xPos = 0.0;
+            if (t.zPos === undefined) t.zPos = 0.0;
             if (!t.align) t.align = 'center';
             if (t.audioStart === undefined) t.audioStart = '';
             if (t.audioEnd === undefined) t.audioEnd = '';
@@ -295,12 +299,21 @@ function buildTrack(t) {
     '</div>' +
     '<div class="row2">' +
     '<div class="row"><label>X Pos</label>' +
-    '<input type="range" id="tx-' + t.id + '" min="-10" max="10" step="0.1" value="' + (t.xPos !== undefined ? t.xPos : 0.0) + '">' +
+    '<input type="range" id="tx-' + t.id + '" min="-20" max="20" step="0.1" value="' + (t.xPos !== undefined ? t.xPos : 0.0) + '">' +
     '<span class="val" id="vx-' + t.id + '">' + (t.xPos !== undefined ? t.xPos : 0.0) + '</span>' +
     '</div>' +
     '<div class="row"><label>Y Pos</label>' +
-    '<input type="range" id="ty-' + t.id + '" min="-5" max="5" step="0.1" value="' + t.yPos + '">' +
+    '<input type="range" id="ty-' + t.id + '" min="-10" max="10" step="0.1" value="' + t.yPos + '">' +
     '<span class="val" id="vy-' + t.id + '">' + t.yPos + '</span>' +
+    '</div>' +
+    '</div>' +
+    '<div class="row2">' +
+    '<div class="row"><label>Z Pos</label>' +
+    '<input type="range" id="tz-' + t.id + '" min="-10" max="10" step="0.1" value="' + (t.zPos !== undefined ? t.zPos : 0.0) + '">' +
+    '<span class="val" id="vz-' + t.id + '">' + (t.zPos !== undefined ? t.zPos : 0.0) + '</span>' +
+    '</div>' +
+    '<div class="row"><label>Bevel</label>' +
+    '<input type="checkbox" id="tb-' + t.id + '"' + (t.bevel ? ' checked' : '') + '>' +
     '</div>' +
     '</div>' +
     '<div class="row2">' +
@@ -316,9 +329,6 @@ function buildTrack(t) {
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="10" x2="7" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="17" y2="18"></line></svg>' +
     '</button>' +
     '</div>' +
-    '</div>' +
-    '<div class="row"><label>Bevel</label>' +
-    '<input type="checkbox" id="tb-' + t.id + '"' + (t.bevel ? ' checked' : '') + '>' +
     '</div>' +
     '</div>' +
     '<div class="row2">' +
@@ -418,6 +428,13 @@ function buildTrack(t) {
     schedulePush();
   });
 
+  // Z-Pos slider
+  wrap.querySelector('#tz-' + t.id).addEventListener('input', function () {
+    findTrack(t.id).zPos = parseFloat(this.value);
+    wrap.querySelector('#vz-' + t.id).textContent = this.value;
+    schedulePush();
+  });
+
   // Align group
   var alignButtons = wrap.querySelectorAll('#tag-' + t.id + ' .abtn');
   alignButtons.forEach(function (btn) {
@@ -494,6 +511,7 @@ function loadScene(name) {
           gState.tracks.forEach(function (t) {
             updateTrackOutputText(t);
             if (t.xPos === undefined) t.xPos = 0.0;
+            if (t.zPos === undefined) t.zPos = 0.0;
             if (!t.align) t.align = 'center';
             if (t.audioStart === undefined) t.audioStart = '';
             if (t.audioEnd === undefined) t.audioEnd = '';
@@ -669,7 +687,7 @@ function clearAudioSelection() {
 }
 
 /* ── Live preview ──────────────────────────────────────────────────────────── */
-var pvScene, pvCamera, pvRenderer, pvLoader;
+var pvScene, pvCamera, pvRenderer, pvLoader, pvGroup;
 var pvMeshes = [null, null, null];
 function initPreview() {
   if (typeof THREE === 'undefined') {
@@ -690,7 +708,47 @@ function initPreview() {
   dl.position.set(5, 5, 5);
   pvScene.add(dl);
 
+  pvGroup = new THREE.Group();
+  pvScene.add(pvGroup);
+
   pvLoader = new THREE.FontLoader();
+
+  // Drag interaction for rotation
+  var isDragging = false;
+  var previousPointerPosition = { x: 0, y: 0 };
+
+  canvas.style.cursor = 'grab';
+
+  canvas.addEventListener('pointerdown', function (e) {
+    isDragging = true;
+    previousPointerPosition = { x: e.clientX, y: e.clientY };
+    canvas.setPointerCapture(e.pointerId);
+    canvas.style.cursor = 'grabbing';
+  });
+
+  canvas.addEventListener('pointermove', function (e) {
+    if (!isDragging) return;
+    var deltaX = e.clientX - previousPointerPosition.x;
+    var deltaY = e.clientY - previousPointerPosition.y;
+
+    if (pvGroup) {
+      pvGroup.rotation.y += deltaX * 0.01;
+      pvGroup.rotation.x += deltaY * 0.01;
+    }
+
+    previousPointerPosition = { x: e.clientX, y: e.clientY };
+  });
+
+  var stopDrag = function (e) {
+    if (!isDragging) return;
+    isDragging = false;
+    canvas.releasePointerCapture(e.pointerId);
+    canvas.style.cursor = 'grab';
+  };
+
+  canvas.addEventListener('pointerup', stopDrag);
+  canvas.addEventListener('pointercancel', stopDrag);
+
   window.addEventListener('resize', resizePreview);
   resizePreview();
   pvAnimLoop();
@@ -737,16 +795,13 @@ function resizePreview() {
 function pvAnimLoop() {
   requestAnimationFrame(pvAnimLoop);
   if (!pvRenderer) return;
-  if (!gSpinPaused) {
-    pvMeshes.forEach(function (m) { if (m) m.rotation.y += 0.008; });
-  }
   pvRenderer.render(pvScene, pvCamera);
 }
 
 function updatePreview() {
   if (!pvScene || !gState) return;
   gState.tracks.forEach(function (t, i) {
-    if (pvMeshes[i]) { pvScene.remove(pvMeshes[i]); pvMeshes[i] = null; }
+    if (pvMeshes[i]) { if (pvGroup) pvGroup.remove(pvMeshes[i]); pvMeshes[i] = null; }
     if (!t.enabled) return;
 
     var col = parseInt(t.color.replace('#', ''), 16);
@@ -756,7 +811,8 @@ function updatePreview() {
       var mesh = new THREE.Mesh(geo, mat);
       mesh.position.x = (t.xPos !== undefined ? t.xPos : 0.0) * 0.5;
       mesh.position.y = t.yPos * 0.5;
-      pvScene.add(mesh);
+      mesh.position.z = (t.zPos !== undefined ? t.zPos : 0.0) * 0.5;
+      if (pvGroup) pvGroup.add(mesh);
       pvMeshes[i] = mesh;
     };
 
