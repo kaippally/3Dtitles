@@ -511,10 +511,10 @@ footer {
 .track.drag-over-bottom {
   border-bottom: 3px solid #00a2ff !important;
 }
-.track-header {
+.drag-handle {
   cursor: grab;
 }
-.track-header:active {
+.drag-handle:active {
   cursor: grabbing;
 }
 

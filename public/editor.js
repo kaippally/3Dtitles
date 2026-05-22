@@ -473,7 +473,7 @@ function buildTrack(t) {
   var displayStyle = isExpanded ? '' : 'display: none;';
 
   // Drag-and-drop sort events
-  wrap.draggable = true;
+  wrap.draggable = false;
   wrap.addEventListener('dragstart', function (e) {
     e.dataTransfer.setData('text/plain', t.id);
     wrap.classList.add('dragging');
@@ -481,6 +481,7 @@ function buildTrack(t) {
   });
 
   wrap.addEventListener('dragend', function (e) {
+    wrap.draggable = false;
     wrap.classList.remove('dragging');
     document.querySelectorAll('.track').forEach(function (el) {
       el.classList.remove('drag-over-top');
@@ -559,6 +560,7 @@ function buildTrack(t) {
       '<span class="track-label" id="tLabel-' + t.id + '">' + esc(t.image ? t.image.split('/').pop() : '(no image)') + '</span>' +
       '<span class="anim-badge"  id="tBadge-' + t.id + '">' + animLabel + '</span>' +
       '<button class="tog' + (t.enabled ? ' on' : '') + '" id="tTog-' + t.id + '"></button>' +
+      '<span class="drag-handle" style="margin-left: 4px; font-size: 16px; user-select: none; color: var(--muted);" title="Drag to reorder">☰</span>' +
       '</div>' +
       '<div class="track-body" id="tbody-' + t.id + '" style="' + displayStyle + '">' +
       '<div class="row">' +
@@ -613,7 +615,7 @@ function buildTrack(t) {
     var body = wrap.querySelector('#tbody-' + t.id);
 
     header.addEventListener('click', function (e) {
-      if (e.target === tog) return;
+      if (e.target === tog || e.target.classList.contains('drag-handle')) return;
       var isCollapsed = body.style.display === 'none';
       if (isCollapsed) {
         body.style.display = '';
@@ -689,6 +691,21 @@ function buildTrack(t) {
       openAudioModal(t.id, 'audioEnd');
     });
 
+    var dragHandle = wrap.querySelector('.drag-handle');
+    if (dragHandle) {
+      dragHandle.addEventListener('mousedown', function () {
+        wrap.draggable = true;
+      });
+      dragHandle.addEventListener('mouseup', function () {
+        wrap.draggable = false;
+      });
+      dragHandle.addEventListener('mouseleave', function () {
+        if (!wrap.classList.contains('dragging')) {
+          wrap.draggable = false;
+        }
+      });
+    }
+
     return wrap;
   }
 
@@ -705,6 +722,7 @@ function buildTrack(t) {
     '<span class="track-label" id="tLabel-' + t.id + '">' + esc(t.text || '(empty)') + '</span>' +
     '<span class="anim-badge"  id="tBadge-' + t.id + '">' + animLabel + '</span>' +
     '<button class="tog' + (t.enabled ? ' on' : '') + '" id="tTog-' + t.id + '"></button>' +
+    '<span class="drag-handle" style="margin-left: 4px; font-size: 16px; user-select: none; color: var(--muted);" title="Drag to reorder">☰</span>' +
     '</div>' +
     '<div class="track-body" id="tbody-' + t.id + '" style="' + displayStyle + '">' +
     '<div class="row">' +
@@ -798,7 +816,7 @@ function buildTrack(t) {
   var body = wrap.querySelector('#tbody-' + t.id);
 
   header.addEventListener('click', function (e) {
-    if (e.target === tog) return;
+    if (e.target === tog || e.target.classList.contains('drag-handle')) return;
     var isCollapsed = body.style.display === 'none';
     if (isCollapsed) {
       body.style.display = '';
@@ -932,6 +950,21 @@ function buildTrack(t) {
   wrap.querySelector('#tao-' + t.id).addEventListener('click', function () {
     openAudioModal(t.id, 'audioEnd');
   });
+
+  var dragHandle = wrap.querySelector('.drag-handle');
+  if (dragHandle) {
+    dragHandle.addEventListener('mousedown', function () {
+      wrap.draggable = true;
+    });
+    dragHandle.addEventListener('mouseup', function () {
+      wrap.draggable = false;
+    });
+    dragHandle.addEventListener('mouseleave', function () {
+      if (!wrap.classList.contains('dragging')) {
+        wrap.draggable = false;
+      }
+    });
+  }
 
   return wrap;
 }
