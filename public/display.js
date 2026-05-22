@@ -44,28 +44,62 @@ function easeOutBack(t) {
 }
 
 /* ── Three.js init ────────────────────────────────────────────────────────── */
+/* ── Audio globals ───────────────────────────────────────────────────────── */
+let activeAudios = [];
+let activeTimeouts = [];
+
+function stopAllAudio() {
+  activeAudios.forEach(audio => {
+    try { audio.pause(); } catch (e) {}
+  });
+  activeAudios = [];
+  activeTimeouts.forEach(t => clearTimeout(t));
+  activeTimeouts = [];
+}
+
+/* ── Three.js init ────────────────────────────────────────────────────────── */
 function initThree() {
   const canvas = document.getElementById('displayCanvas');
-  const W = window.innerWidth, H = window.innerHeight;
   scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 1000);
+  camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
   camera.position.set(0, 0, 10);
   renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setSize(W, H);
   renderer.setClearColor(0x000000, 0);
   scene.add(new THREE.AmbientLight(0xffffff, 0.6));
   const dl = new THREE.DirectionalLight(0xffffff, 0.8);
   dl.position.set(5, 5, 5);
   scene.add(dl);
   fontLoader = new THREE.FontLoader();
-  window.addEventListener('resize', onWindowResize);
+  window.addEventListener('resize', resizeDisplay);
+  resizeDisplay();
   animateLoop();
 }
-function onWindowResize() {
-  camera.aspect = window.innerWidth / window.innerHeight;
+function resizeDisplay() {
+  if (!renderer || !camera) return;
+  const canvas = document.getElementById('displayCanvas');
+  let aspectParts = ['16', '9'];
+  if (activeState && activeState.aspectRatio) {
+    const parts = activeState.aspectRatio.split('x');
+    if (parts.length === 2) {
+      aspectParts = parts;
+    }
+  }
+  const targetRatio = parseFloat(aspectParts[0]) / parseFloat(aspectParts[1]);
+  const screenRatio = window.innerWidth / window.innerHeight;
+  let W, H;
+  if (screenRatio > targetRatio) {
+    H = window.innerHeight;
+    W = H * targetRatio;
+  } else {
+    W = window.innerWidth;
+    H = W / targetRatio;
+  }
+  canvas.style.width = `${W}px`;
+  canvas.style.height = `${H}px`;
+  camera.aspect = W / H;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(W, H, false);
 }
 
 /* ── WebSocket ────────────────────────────────────────────────────────────── */
@@ -81,6 +115,7 @@ function connectSocket() {
         case 'state':
           activeState = data.state;
           rebuildScene();
+          resizeDisplay();
           if (data.autoPlay) triggerAnimation();
           break;
         case 'trigger': triggerAnimation(); break;
@@ -98,7 +133,7 @@ function buildTrackMesh(track, cb) {
     if (!font) { cb(null); return; }
     try {
       const geo = new THREE.TextGeometry(text, getTextGeometryOptions(track, font));
-      geo.center();
+      alignGeometry(geo, track.align || 'center');
       cb(geo);
     } catch (e) {
       console.error('[Display] TextGeometry error', e);
@@ -127,6 +162,7 @@ function rebuildScene() {
       mesh.visible = false;
       mesh.userData = {
         id: track.id,
+        baseX: (track.xPos !== undefined ? track.xPos : 0.0) * 0.5,
         baseY: track.yPos * 0.5,
         delay: track.delay || 0,
         duration: track.duration || 0,
@@ -141,12 +177,42 @@ function rebuildScene() {
 /* ── Timeline controls ────────────────────────────────────────────────────── */
 function triggerAnimation() {
   console.log('[Timeline] Triggering');
+  stopAllAudio();
   animationStartTime = performance.now();
   isAnimating = true;
+
+  if (!activeState || !activeState.tracks) return;
+
+  activeState.tracks.forEach(track => {
+    if (!track.enabled) return;
+
+    // Track Audio In
+    if (track.audioStart) {
+      const delay = track.delay || 0;
+      const tIn = setTimeout(() => {
+        const audio = new Audio(track.audioStart);
+        activeAudios.push(audio);
+        audio.play().catch(e => console.warn(`Failed to play start audio for track ${track.id}:`, e));
+      }, delay);
+      activeTimeouts.push(tIn);
+    }
+
+    // Track Audio Out (scheduled only if track.duration > 0, which is finite hold duration)
+    if (track.audioEnd && track.duration > 0) {
+      const delay = (track.delay || 0) + ANIM_IN_DURATION + track.duration;
+      const tOut = setTimeout(() => {
+        const audio = new Audio(track.audioEnd);
+        activeAudios.push(audio);
+        audio.play().catch(e => console.warn(`Failed to play end audio for track ${track.id}:`, e));
+      }, delay);
+      activeTimeouts.push(tOut);
+    }
+  });
 }
 function resetTimeline() {
   console.log('[Timeline] Reset');
   isAnimating = false;
+  stopAllAudio();
   Object.values(trackMeshes).forEach(mesh => {
     if (!mesh) return;
     mesh.visible = false;
@@ -169,12 +235,12 @@ function animateLoop() {
       } else {
         mesh.visible = true;
         if (elapsed < ANIM_IN_DURATION) {
-          applyAnimationIn(mesh, d.animation, elapsed / ANIM_IN_DURATION, d.baseY);
+          applyAnimationIn(mesh, d.animation, elapsed / ANIM_IN_DURATION, d.baseX, d.baseY);
         } else if (d.duration === 0 || elapsed < ANIM_IN_DURATION + d.duration) {
-          applyAnimationHold(mesh, d.animation, elapsed - ANIM_IN_DURATION, d.baseY);
+          applyAnimationHold(mesh, d.animation, elapsed - ANIM_IN_DURATION, d.baseX, d.baseY);
         } else if (elapsed < ANIM_IN_DURATION + d.duration + ANIM_OUT_DURATION) {
           const tOut = (elapsed - ANIM_IN_DURATION - d.duration) / ANIM_OUT_DURATION;
-          applyAnimationHold(mesh, d.animation, d.duration + (elapsed - ANIM_IN_DURATION - d.duration), d.baseY);
+          applyAnimationHold(mesh, d.animation, d.duration + (elapsed - ANIM_IN_DURATION - d.duration), d.baseX, d.baseY);
           mesh.material.opacity = 1.0 - tOut;
         } else {
           mesh.visible = false; mesh.material.opacity = 0;
@@ -186,50 +252,50 @@ function animateLoop() {
 }
 
 /* ── Animation applicators ────────────────────────────────────────────────── */
-function applyAnimationIn(mesh, animId, t, baseY) {
+function applyAnimationIn(mesh, animId, t, baseX, baseY) {
   mesh.scale.set(1, 1, 1); mesh.rotation.set(0, 0, 0);
   switch (animId) {
     case 'crashLandTop':
-      mesh.position.set(0, baseY + 10 * (1 - easeOutBounce(t)), 0);
+      mesh.position.set(baseX, baseY + 10 * (1 - easeOutBounce(t)), 0);
       mesh.material.opacity = Math.min(1.0, t * 5); break;
     case 'zipInRight':
-      mesh.position.set(15 * (1 - easeOutElastic(t)), baseY, 0);
+      mesh.position.set(baseX + 15 * (1 - easeOutElastic(t)), baseY, 0);
       mesh.material.opacity = Math.min(1.0, t * 4); break;
     case 'zipInSpin':
-      mesh.position.set(15 * (1 - easeOutBack(t)), baseY, 0);
+      mesh.position.set(baseX + 15 * (1 - easeOutBack(t)), baseY, 0);
       mesh.rotation.y = (1 - t) * Math.PI * 2;
       mesh.material.opacity = Math.min(1.0, t * 4); break;
     case 'spinContinuous':
-      mesh.position.set(0, baseY, 0);
+      mesh.position.set(baseX, baseY, 0);
       mesh.rotation.y = t * Math.PI * 2;
       mesh.material.opacity = t; break;
     case 'spinAndStop':
-      mesh.position.set(0, baseY, 0);
+      mesh.position.set(baseX, baseY, 0);
       mesh.rotation.y = (1 - easeOutQuad(t)) * Math.PI * 4;
       mesh.material.opacity = t; break;
     case 'bounce':
-      mesh.position.set(0, baseY + 3 * (1 - easeOutBounce(t)), 0);
+      mesh.position.set(baseX, baseY + 3 * (1 - easeOutBounce(t)), 0);
       mesh.material.opacity = Math.min(1.0, t * 5); break;
     case 'fadeIn':
-      mesh.position.set(0, baseY, 0);
+      mesh.position.set(baseX, baseY, 0);
       mesh.material.opacity = t; break;
     default:
-      mesh.position.set(0, baseY, 0);
+      mesh.position.set(baseX, baseY, 0);
       mesh.material.opacity = 1.0; break;
   }
 }
-function applyAnimationHold(mesh, animId, elapsed, baseY) {
+function applyAnimationHold(mesh, animId, elapsed, baseX, baseY) {
   mesh.material.opacity = 1.0; mesh.scale.set(1, 1, 1);
   switch (animId) {
     case 'zipInSpin':
     case 'spinContinuous':
-      mesh.position.set(0, baseY, 0);
+      mesh.position.set(baseX, baseY, 0);
       mesh.rotation.y = (elapsed / 1000) * 1.5; break;
     case 'bounce':
-      mesh.position.set(0, baseY + Math.abs(Math.sin(elapsed * 0.005)) * 0.4, 0);
+      mesh.position.set(baseX, baseY + Math.abs(Math.sin(elapsed * 0.005)) * 0.4, 0);
       mesh.rotation.set(0, 0, 0); break;
     default:
-      mesh.position.set(0, baseY, 0);
+      mesh.position.set(baseX, baseY, 0);
       mesh.rotation.set(0, 0, 0); break;
   }
 }

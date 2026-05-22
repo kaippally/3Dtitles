@@ -4,6 +4,7 @@ var gFile = null;
 var gDirty = false;
 var gFonts = [];
 var gPushTimer = null;
+var gSpinPaused = false;
 
 var PRESETS = [
   { id: 'crashLandTop', label: 'Crash Land (Top)' },
@@ -43,10 +44,13 @@ function updateTrackOutputText(track) {
 /* ── Boot ──────────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function () {
   wireButtons();
-  fetchFonts(function () {
-    fetchState(function () {
-      renderTracks();
-      initPreview();   // Three.js scripts already loaded via <script> in HTML
+  fetchResolutions(function () {
+    fetchFonts(function () {
+      fetchState(function () {
+        updateGlobalUI();
+        renderTracks();
+        initPreview();
+      });
     });
   });
 });
@@ -73,9 +77,61 @@ function wireButtons() {
     if (e.key === 'Escape') { closeModal('openModal'); closeModal('saveAsModal'); }
     if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); fileSave(); }
   });
+
+  // Global Scene Settings wiring
+  $id('selAspectRatio').addEventListener('change', function () {
+    if (gState) {
+      gState.aspectRatio = this.value;
+      schedulePush();
+      resizePreview();
+    }
+  });
+
+
+  // Pause spin toggle
+  $id('btnPauseSpin').addEventListener('click', function () {
+    gSpinPaused = !gSpinPaused;
+    this.innerHTML = gSpinPaused ? '&#9654; Resume Spin' : '&#10074;&#10074; Pause Spin';
+    this.classList.toggle('active', gSpinPaused);
+  });
 }
 
 /* ── Data ──────────────────────────────────────────────────────────────────── */
+function fetchResolutions(cb) {
+  fetch('/resolutions.json')
+    .then(function (r) { return r.json(); })
+    .then(function (resList) {
+      var sel = $id('selAspectRatio');
+      sel.innerHTML = '';
+      resList.forEach(function (res) {
+        var opt = document.createElement('option');
+        opt.value = res;
+        opt.textContent = res;
+        sel.appendChild(opt);
+      });
+      if (cb) cb();
+    })
+    .catch(function (e) {
+      console.error('fetchResolutions error:', e);
+      var sel = $id('selAspectRatio');
+      var fallback = ["1920x1080", "1080x720", "720x1080", "1280x720", "1080x1080"];
+      sel.innerHTML = '';
+      fallback.forEach(function (res) {
+        var opt = document.createElement('option');
+        opt.value = res;
+        opt.textContent = res;
+        sel.appendChild(opt);
+      });
+      if (cb) cb();
+    });
+}
+
+function updateGlobalUI() {
+  if (!gState) return;
+  $id('selAspectRatio').value = gState.aspectRatio || '1920x1080';
+  resizePreview();
+}
+
 function fetchFonts(cb) {
   fetch('/api/fonts')
     .then(function (r) { return r.json(); })
@@ -88,8 +144,17 @@ function fetchState(cb) {
     .then(function (r) { return r.json(); })
     .then(function (d) {
       gState = d;
-      if (gState && gState.tracks) {
-        gState.tracks.forEach(updateTrackOutputText);
+      if (gState) {
+        if (!gState.aspectRatio) gState.aspectRatio = '1920x1080';
+        if (gState.tracks) {
+          gState.tracks.forEach(function (t) {
+            updateTrackOutputText(t);
+            if (t.xPos === undefined) t.xPos = 0.0;
+            if (!t.align) t.align = 'center';
+            if (t.audioStart === undefined) t.audioStart = '';
+            if (t.audioEnd === undefined) t.audioEnd = '';
+          });
+        }
       }
       if (cb) cb();
     })
@@ -158,12 +223,39 @@ function buildTrack(t) {
     '</div>' +
     '</div>' +
     '<div class="row2">' +
+    '<div class="row"><label>X Pos</label>' +
+    '<input type="range" id="tx-' + t.id + '" min="-10" max="10" step="0.1" value="' + (t.xPos !== undefined ? t.xPos : 0.0) + '">' +
+    '<span class="val" id="vx-' + t.id + '">' + (t.xPos !== undefined ? t.xPos : 0.0) + '</span>' +
+    '</div>' +
     '<div class="row"><label>Y Pos</label>' +
     '<input type="range" id="ty-' + t.id + '" min="-5" max="5" step="0.1" value="' + t.yPos + '">' +
     '<span class="val" id="vy-' + t.id + '">' + t.yPos + '</span>' +
     '</div>' +
+    '</div>' +
+    '<div class="row2">' +
+    '<div class="row"><label>Align</label>' +
+    '<div class="align-group" id="tag-' + t.id + '">' +
+    '<button type="button" class="abtn' + (t.align === 'left' ? ' active' : '') + '" data-val="left" title="Left Align">' +
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>' +
+    '</button>' +
+    '<button type="button" class="abtn' + (!t.align || t.align === 'center' ? ' active' : '') + '" data-val="center" title="Center Align">' +
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="10" x2="6" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="18" y1="18" x2="6" y2="18"></line></svg>' +
+    '</button>' +
+    '<button type="button" class="abtn' + (t.align === 'right' ? ' active' : '') + '" data-val="right" title="Right Align">' +
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="10" x2="7" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="17" y2="18"></line></svg>' +
+    '</button>' +
+    '</div>' +
+    '</div>' +
     '<div class="row"><label>Bevel</label>' +
     '<input type="checkbox" id="tb-' + t.id + '"' + (t.bevel ? ' checked' : '') + '>' +
+    '</div>' +
+    '</div>' +
+    '<div class="row2">' +
+    '<div class="row"><label style="min-width:55px">Audio In</label>' +
+    '<input type="text" id="tai-' + t.id + '" value="' + esc(t.audioStart || '') + '" placeholder="e.g. /audio/in.mp3" style="width:100%">' +
+    '</div>' +
+    '<div class="row"><label style="min-width:55px">Audio Out</label>' +
+    '<input type="text" id="tao-' + t.id + '" value="' + esc(t.audioEnd || '') + '" placeholder="e.g. /audio/out.mp3" style="width:100%">' +
     '</div>' +
     '</div>' +
     '<div class="row">' +
@@ -241,11 +333,31 @@ function buildTrack(t) {
     schedulePush();
   });
 
+  // X-Pos slider
+  wrap.querySelector('#tx-' + t.id).addEventListener('input', function () {
+    findTrack(t.id).xPos = parseFloat(this.value);
+    wrap.querySelector('#vx-' + t.id).textContent = this.value;
+    schedulePush();
+  });
+
   // Y-Pos slider
   wrap.querySelector('#ty-' + t.id).addEventListener('input', function () {
     findTrack(t.id).yPos = parseFloat(this.value);
     wrap.querySelector('#vy-' + t.id).textContent = this.value;
     schedulePush();
+  });
+
+  // Align group
+  var alignButtons = wrap.querySelectorAll('#tag-' + t.id + ' .abtn');
+  alignButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var track = findTrack(t.id);
+      track.align = this.getAttribute('data-val');
+      alignButtons.forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+      schedulePush();
+    });
   });
 
   // Bevel checkbox
@@ -263,6 +375,20 @@ function buildTrack(t) {
   // Duration number
   wrap.querySelector('#tdr-' + t.id).addEventListener('input', function () {
     findTrack(t.id).duration = parseFloat(this.value) || 0;
+    schedulePush();
+  });
+
+  // Audio In input
+  wrap.querySelector('#tai-' + t.id).addEventListener('input', function () {
+    var track = findTrack(t.id);
+    track.audioStart = this.value;
+    schedulePush();
+  });
+
+  // Audio Out input
+  wrap.querySelector('#tao-' + t.id).addEventListener('input', function () {
+    var track = findTrack(t.id);
+    track.audioEnd = this.value;
     schedulePush();
   });
 
@@ -318,11 +444,21 @@ function loadScene(name) {
     .then(function (r) { return r.json(); })
     .then(function (data) {
       gState = data;
-      if (gState && gState.tracks) {
-        gState.tracks.forEach(updateTrackOutputText);
+      if (gState) {
+        if (!gState.aspectRatio) gState.aspectRatio = '1920x1080';
+        if (gState.tracks) {
+          gState.tracks.forEach(function (t) {
+            updateTrackOutputText(t);
+            if (t.xPos === undefined) t.xPos = 0.0;
+            if (!t.align) t.align = 'center';
+            if (t.audioStart === undefined) t.audioStart = '';
+            if (t.audioEnd === undefined) t.audioEnd = '';
+          });
+        }
       }
       setFilename(name);
       renderTracks();
+      updateGlobalUI();
       pushState();
     });
 }
@@ -380,16 +516,12 @@ function initPreview() {
     return;
   }
   var canvas = $id('previewCanvas');
-  var W = canvas.clientWidth || 340;
-  var H = canvas.clientHeight || 240;
-
   pvScene = new THREE.Scene();
-  pvCamera = new THREE.PerspectiveCamera(45, W / H, 0.1, 1000);
+  pvCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
   pvCamera.position.set(0, 0, 10);
 
   pvRenderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
   pvRenderer.setPixelRatio(devicePixelRatio);
-  pvRenderer.setSize(W, H);
   pvRenderer.setClearColor(0x000000, 0);
 
   pvScene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -398,14 +530,36 @@ function initPreview() {
   pvScene.add(dl);
 
   pvLoader = new THREE.FontLoader();
+  window.addEventListener('resize', resizePreview);
+  resizePreview();
   pvAnimLoop();
   updatePreview();
+}
+
+function resizePreview() {
+  if (!pvRenderer || !pvCamera) return;
+  var canvas = $id('previewCanvas');
+  if (gState && gState.aspectRatio) {
+    var parts = gState.aspectRatio.split('x');
+    if (parts.length === 2) {
+      canvas.style.aspectRatio = parts[0] + ' / ' + parts[1];
+    }
+  } else {
+    canvas.style.aspectRatio = '16 / 9';
+  }
+  var W = canvas.clientWidth;
+  var H = canvas.clientHeight;
+  pvCamera.aspect = W / H;
+  pvCamera.updateProjectionMatrix();
+  pvRenderer.setSize(W, H, false);
 }
 
 function pvAnimLoop() {
   requestAnimationFrame(pvAnimLoop);
   if (!pvRenderer) return;
-  pvMeshes.forEach(function (m) { if (m) m.rotation.y += 0.008; });
+  if (!gSpinPaused) {
+    pvMeshes.forEach(function (m) { if (m) m.rotation.y += 0.008; });
+  }
   pvRenderer.render(pvScene, pvCamera);
 }
 
@@ -420,6 +574,7 @@ function updatePreview() {
       if (!geo) return;
       var mat = new THREE.MeshPhongMaterial({ color: col, transparent: true, opacity: 1 });
       var mesh = new THREE.Mesh(geo, mat);
+      mesh.position.x = (t.xPos !== undefined ? t.xPos : 0.0) * 0.5;
       mesh.position.y = t.yPos * 0.5;
       pvScene.add(mesh);
       pvMeshes[i] = mesh;
@@ -430,7 +585,7 @@ function updatePreview() {
       try {
         var text = getRenderingText(t);
         var geo = new THREE.TextGeometry(text, getTextGeometryOptions(t, font));
-        geo.center();
+        alignGeometry(geo, t.align || 'center');
         addMesh(geo);
       } catch (e) { console.error('preview TextGeometry error:', e); }
     });

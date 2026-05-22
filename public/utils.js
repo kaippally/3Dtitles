@@ -116,3 +116,27 @@ function getTextGeometryOptions(track, font) {
   };
 }
 
+function alignGeometry(geo, align) {
+  geo.computeBoundingBox();
+  var min = geo.boundingBox.min;
+  var max = geo.boundingBox.max;
+  var width = max.x - min.x;
+  var height = max.y - min.y;
+  var depth = max.z - min.z;
+
+  var xOffset = 0;
+  if (align === 'left') {
+    xOffset = -min.x;
+  } else if (align === 'right') {
+    xOffset = -max.x;
+  } else { // 'center'
+    xOffset = -(min.x + width / 2);
+  }
+
+  var yOffset = -(min.y + height / 2);
+  var zOffset = -(min.z + depth / 2);
+
+  geo.translate(xOffset, yOffset, zOffset);
+}
+
+
