@@ -310,11 +310,13 @@ function rebuildScene() {
 
       if (mesh) {
         mesh.visible = false;
+        const index = activeState ? activeState.tracks.findIndex(t => t.id === track.id) : -1;
+        const zOffset = index !== -1 ? (activeState.tracks.length - index) * 1.0 : 0.0;
         mesh.userData = {
           id: track.id,
           baseX: (track.xPos !== undefined ? track.xPos : 0.0) * 0.5,
           baseY: track.yPos * 0.5,
-          baseZ: (track.zPos !== undefined ? track.zPos : 0.0) * 0.5,
+          baseZ: (zOffset + (track.zPos !== undefined ? track.zPos : 0.0) * 0.04) * 0.5,
           delay: track.delay || 0,
           duration: track.duration || 0,
           animation: track.animation || 'static',
@@ -331,7 +333,7 @@ function rebuildScene() {
             const m = tempMeshes[track.id];
             if (m) {
               const zOffset = (activeState.tracks.length - index) * 1.0;
-              m.userData.baseZ = ((track.zPos !== undefined ? track.zPos : 0.0) + zOffset) * 0.5;
+              m.userData.baseZ = (zOffset + (track.zPos !== undefined ? track.zPos : 0.0) * 0.04) * 0.5;
               m.renderOrder = activeState.tracks.length - index;
               m.traverse(child => {
                 if (child.isMesh) {
