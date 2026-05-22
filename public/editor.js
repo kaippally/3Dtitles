@@ -45,20 +45,23 @@ var gSelectedTrackId = null;
 
 function selectTrack(trackId) {
   gSelectedTrackId = trackId;
-  
-  // Highlight the sidebar card
   document.querySelectorAll('.track').forEach(function (el) {
     el.classList.remove('selected-highlight');
   });
   if (trackId !== null) {
     var card = document.getElementById('track-' + trackId);
-    if (card) {
-      card.classList.add('selected-highlight');
+    if (card) card.classList.add('selected-highlight');
+  }
+  if (pvSelectionHelper) {
+    if (pvGroup) pvGroup.remove(pvSelectionHelper);
+    pvSelectionHelper = null;
+  }
+  if (trackId !== null && pvGroup && gState) {
+    var idx = gState.tracks.findIndex(function (t) { return t.id === trackId; });
+    if (idx >= 0 && pvMeshes[idx]) {
+      drawSelectionHelper(pvMeshes[idx], findTrack(trackId));
     }
   }
-  
-  // Redraw the preview canvas to update helpers
-  updatePreview();
 }
 
 /* ── Boot ──────────────────────────────────────────────────────────────────── */
@@ -311,30 +314,9 @@ function normalizeState(state) {
   ];
 
   for (var i = 1; i <= 4; i++) {
-    var found = false;
-    for (var j = 0; j < state.tracks.length; j++) {
-      if (state.tracks[j].id === i) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      var def = null;
-      for (var k = 0; k < defaultTracks.length; k++) {
-        if (defaultTracks[k].id === i) {
-          def = defaultTracks[k];
-          break;
-        }
-      }
-      if (def) {
-        var cloned = {};
-        for (var key in def) {
-          if (def.hasOwnProperty(key)) {
-            cloned[key] = def[key];
-          }
-        }
-        state.tracks.push(cloned);
-      }
+    if (!state.tracks.some(function (t) { return t.id === i; })) {
+      var def = defaultTracks.find(function (dt) { return dt.id === i; });
+      if (def) state.tracks.push(Object.assign({}, def));
     }
   }
 
@@ -414,22 +396,16 @@ function renderTracks() {
   if (!gState) return;
   var panel = $id('tracksPanel');
   panel.innerHTML = '';
-  gState.tracks.forEach(function (t) {
-    if (t.type === 'image') {
-      panel.appendChild(buildTrack(t));
-    }
+  var sorted = gState.tracks.slice().sort(function (a, b) {
+    var aImg = a.type === 'image' ? 0 : 1;
+    var bImg = b.type === 'image' ? 0 : 1;
+    return aImg - bImg || a.id - b.id;
   });
-  gState.tracks.forEach(function (t) {
-    if (t.type !== 'image') {
-      panel.appendChild(buildTrack(t));
-    }
-  });
-  // Maintain selection highlight
+  sorted.forEach(function (t) { panel.appendChild(buildTrack(t)); });
+  // Re-apply highlight after innerHTML wipe
   if (gSelectedTrackId !== null) {
     var card = document.getElementById('track-' + gSelectedTrackId);
-    if (card) {
-      card.classList.add('selected-highlight');
-    }
+    if (card) card.classList.add('selected-highlight');
   }
 }
 
@@ -831,39 +807,33 @@ function pushState() {
   if (!gState) return;
   var autoTriggerEl = $id('chkAutoTrigger');
   var autoTrigger = autoTriggerEl ? autoTriggerEl.checked : true;
-  fetch('/api/state?autoPlay=' + autoTrigger, {
+  var body = JSON.stringify(gState);
+
+  var statePromise = fetch('/api/state?autoPlay=' + autoTrigger, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(gState),
-  })
-    .then(function (r) {
-      if (!r.ok) {
-        console.error('Error pushing state to server');
-      }
-      updatePreview();
+    body: body,
+  }).then(function (r) {
+    if (!r.ok) console.error('Error pushing state to server');
+    updatePreview();
+  });
 
-      // Auto-save if a template is loaded/saved
-      if (gFile) {
-        fetch('/api/saves/' + encodeURIComponent(gFile), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(gState),
-        })
-          .then(function (res) {
-            if (res.ok) {
-              clearDirty();
-            } else {
-              console.error('Auto-save failed');
-            }
-          })
-          .catch(function (err) {
-            console.error('Auto-save error:', err);
-          });
-      }
-    })
-    .catch(function (e) {
-      console.error('pushState error:', e);
-    });
+  var savePromise = gFile
+    ? fetch('/api/saves/' + encodeURIComponent(gFile), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body,
+      }).then(function (res) {
+        if (res.ok) clearDirty();
+        else console.error('Auto-save failed');
+      }).catch(function (err) {
+        console.error('Auto-save error:', err);
+      })
+    : Promise.resolve();
+
+  Promise.all([statePromise, savePromise]).catch(function (e) {
+    console.error('pushState error:', e);
+  });
 }
 
 /* ── File operations ───────────────────────────────────────────────────────── */
@@ -1149,7 +1119,20 @@ var pvScene, pvCamera, pvRenderer, pvLoader, pvGroup;
 var pvMeshes = [null, null, null, null];
 var pvSelectionHelper = null;
 
-// Raycast helper to transform ray into pvGroup's local coordinate space
+function getZPlane(track) {
+  return (track.zPos !== undefined ? track.zPos : 0.0) * 0.5;
+}
+
+function getHandlesFromSelection() {
+  var handles = [];
+  if (pvSelectionHelper) {
+    pvSelectionHelper.traverse(function (child) {
+      if (child.userData && child.userData.isHandle) handles.push(child);
+    });
+  }
+  return handles;
+}
+
 function getLocalRay(raycaster) {
   pvGroup.updateMatrixWorld();
   var invMatrix = new THREE.Matrix4().copy(pvGroup.matrixWorld).invert();
@@ -1158,7 +1141,6 @@ function getLocalRay(raycaster) {
   return new THREE.Ray(localOrigin, localDirection);
 }
 
-// Raycast helper to intersect local ray with the track's Z-plane
 function getLocalIntersection(raycaster, zPlane) {
   var localRay = getLocalRay(raycaster);
   if (Math.abs(localRay.direction.z) < 0.0001) return null;
@@ -1167,7 +1149,6 @@ function getLocalIntersection(raycaster, zPlane) {
   return new THREE.Vector3().copy(localRay.origin).addScaledVector(localRay.direction, t);
 }
 
-// Traverse up parent chain to retrieve trackId
 function getTrackIdFromObject(obj) {
   var curr = obj;
   while (curr) {
@@ -1179,7 +1160,6 @@ function getTrackIdFromObject(obj) {
   return null;
 }
 
-// Find local geometry bounds relative to object position
 function getTrackLocalBounds(mesh, track) {
   if (track.type === 'image') {
     if (mesh && mesh.geometry) {
@@ -1214,10 +1194,13 @@ function getTrackLocalBounds(mesh, track) {
   }
 }
 
-// Draw outline box and resize handles for the selected track
 function drawSelectionHelper(mesh, track) {
   if (!pvGroup) return;
   if (pvSelectionHelper) {
+    pvSelectionHelper.traverse(function (child) {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
     pvGroup.remove(pvSelectionHelper);
     pvSelectionHelper = null;
   }
@@ -1227,7 +1210,6 @@ function drawSelectionHelper(mesh, track) {
   var helperGroup = new THREE.Group();
   helperGroup.position.copy(mesh.position);
 
-  // Outline Box
   var boxGeo = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(bounds.minX, bounds.maxY, 0.01),
     new THREE.Vector3(bounds.maxX, bounds.maxY, 0.01),
@@ -1239,7 +1221,6 @@ function drawSelectionHelper(mesh, track) {
   var boxLine = new THREE.Line(boxGeo, boxMat);
   helperGroup.add(boxLine);
 
-  // Corner handles
   var handleGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
   var handleMat = new THREE.MeshBasicMaterial({ color: 0x00a2ff, depthTest: false });
 
@@ -1261,7 +1242,6 @@ function drawSelectionHelper(mesh, track) {
   pvSelectionHelper = helperGroup;
 }
 
-// Sync back changes made interactively to the sidebar inputs
 function syncTrackSidebarInputs(t) {
   var card = document.getElementById('track-' + t.id);
   if (!card) return;
@@ -1309,34 +1289,24 @@ function initPreview() {
 
   pvLoader = new THREE.FontLoader();
 
-  // Interaction variables
-  var dragMode = null; // 'rotate', 'translate', 'resize'
+  var dragMode = null;
   var dragTrackId = null;
   var dragHandleName = null;
   var dragStartIntersection = null;
   var dragStartTrackState = null;
   var previousPointerPosition = { x: 0, y: 0 };
+  var pvRaycaster = new THREE.Raycaster();
+  var pvMouseVec = new THREE.Vector2();
 
   canvas.style.cursor = 'grab';
 
   canvas.addEventListener('pointerdown', function (e) {
     var rect = canvas.getBoundingClientRect();
-    var mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    var mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-    var raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), pvCamera);
+    pvMouseVec.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    pvRaycaster.setFromCamera(pvMouseVec, pvCamera);
 
     // 1. Check if we hit a handle of the selected track
-    var handles = [];
-    if (pvSelectionHelper) {
-      pvSelectionHelper.traverse(function (child) {
-        if (child.userData && child.userData.isHandle) {
-          handles.push(child);
-        }
-      });
-    }
-    var intersectsHandles = raycaster.intersectObjects(handles);
+    var intersectsHandles = pvRaycaster.intersectObjects(getHandlesFromSelection());
     if (intersectsHandles.length > 0) {
       var handleObj = intersectsHandles[0].object;
       dragMode = 'resize';
@@ -1345,7 +1315,7 @@ function initPreview() {
 
       var track = findTrack(dragTrackId);
       dragStartTrackState = JSON.parse(JSON.stringify(track));
-      dragStartIntersection = getLocalIntersection(raycaster, (track.zPos !== undefined ? track.zPos : 0.0) * 0.5);
+      dragStartIntersection = getLocalIntersection(pvRaycaster, getZPlane(track));
 
       canvas.setPointerCapture(e.pointerId);
       canvas.style.cursor = 'pointer';
@@ -1354,11 +1324,8 @@ function initPreview() {
     }
 
     // 2. Check if we hit a track mesh
-    var meshObjects = [];
-    pvMeshes.forEach(function (mesh) {
-      if (mesh) meshObjects.push(mesh);
-    });
-    var intersectsMeshes = raycaster.intersectObjects(meshObjects, true);
+    var meshObjects = pvMeshes.filter(function (m) { return !!m; });
+    var intersectsMeshes = pvRaycaster.intersectObjects(meshObjects, true);
     if (intersectsMeshes.length > 0) {
       var trackId = getTrackIdFromObject(intersectsMeshes[0].object);
       if (trackId !== null) {
@@ -1367,7 +1334,7 @@ function initPreview() {
 
         var track = findTrack(dragTrackId);
         dragStartTrackState = JSON.parse(JSON.stringify(track));
-        dragStartIntersection = getLocalIntersection(raycaster, (track.zPos !== undefined ? track.zPos : 0.0) * 0.5);
+        dragStartIntersection = getLocalIntersection(pvRaycaster, getZPlane(track));
 
         selectTrack(trackId);
 
@@ -1378,7 +1345,7 @@ function initPreview() {
       }
     }
 
-    // 3. Hit background
+    // 3. Hit background — rotate scene
     dragMode = 'rotate';
     previousPointerPosition = { x: e.clientX, y: e.clientY };
     selectTrack(null);
@@ -1388,38 +1355,19 @@ function initPreview() {
 
   canvas.addEventListener('pointermove', function (e) {
     var rect = canvas.getBoundingClientRect();
-    var mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    var mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-    var raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), pvCamera);
+    pvMouseVec.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    pvRaycaster.setFromCamera(pvMouseVec, pvCamera);
 
     if (!dragMode) {
-      // Hover cursor updates when not dragging
-      var handles = [];
-      if (pvSelectionHelper) {
-        pvSelectionHelper.traverse(function (child) {
-          if (child.userData && child.userData.isHandle) {
-            handles.push(child);
-          }
-        });
-      }
-      var intersectsHandles = raycaster.intersectObjects(handles);
-      if (intersectsHandles.length > 0) {
+      if (pvRaycaster.intersectObjects(getHandlesFromSelection()).length > 0) {
         canvas.style.cursor = 'pointer';
         return;
       }
-
-      var meshObjects = [];
-      pvMeshes.forEach(function (mesh) {
-        if (mesh) meshObjects.push(mesh);
-      });
-      var intersectsMeshes = raycaster.intersectObjects(meshObjects, true);
-      if (intersectsMeshes.length > 0) {
+      var meshObjects = pvMeshes.filter(function (m) { return !!m; });
+      if (pvRaycaster.intersectObjects(meshObjects, true).length > 0) {
         canvas.style.cursor = 'move';
         return;
       }
-
       canvas.style.cursor = 'grab';
       return;
     }
@@ -1438,14 +1386,14 @@ function initPreview() {
     }
 
     if (dragMode === 'translate') {
-      var currentIntersection = getLocalIntersection(raycaster, (dragStartTrackState.zPos !== undefined ? dragStartTrackState.zPos : 0.0) * 0.5);
+      var currentIntersection = getLocalIntersection(pvRaycaster, getZPlane(dragStartTrackState));
       if (currentIntersection && dragStartIntersection) {
-        var deltaX = currentIntersection.x - dragStartIntersection.x;
-        var deltaY = currentIntersection.y - dragStartIntersection.y;
+        var translateDeltaX = currentIntersection.x - dragStartIntersection.x;
+        var translateDeltaY = currentIntersection.y - dragStartIntersection.y;
 
         var track = findTrack(dragTrackId);
-        track.xPos = dragStartTrackState.xPos + deltaX * 2.0;
-        track.yPos = dragStartTrackState.yPos + deltaY * 2.0;
+        track.xPos = dragStartTrackState.xPos + translateDeltaX * 2.0;
+        track.yPos = dragStartTrackState.yPos + translateDeltaY * 2.0;
 
         syncTrackSidebarInputs(track);
         schedulePush();
@@ -1454,7 +1402,7 @@ function initPreview() {
     }
 
     if (dragMode === 'resize') {
-      var currentIntersection = getLocalIntersection(raycaster, (dragStartTrackState.zPos !== undefined ? dragStartTrackState.zPos : 0.0) * 0.5);
+      var currentIntersection = getLocalIntersection(pvRaycaster, getZPlane(dragStartTrackState));
       if (currentIntersection && dragStartIntersection) {
         var origMesh = null;
         for (var idx = 0; idx < gState.tracks.length; idx++) {
@@ -1481,21 +1429,17 @@ function initPreview() {
         var x_BR = sx + origBounds.maxX;
         var y_BR = sy + origBounds.minY;
 
-        var Ax = 0, Ay = 0; // Anchor corner (opposite of dragged)
-        var Dx = 0, Dy = 0; // Dragged corner original
+        // Ax/Ay = anchor corner (stays fixed), opposite of the dragged handle
+        var Ax = 0, Ay = 0;
 
         if (dragHandleName === 'TL') {
           Ax = x_BR; Ay = y_BR;
-          Dx = x_TL; Dy = y_TL;
         } else if (dragHandleName === 'TR') {
           Ax = x_BL; Ay = y_BL;
-          Dx = x_TR; Dy = y_TR;
         } else if (dragHandleName === 'BL') {
           Ax = x_TR; Ay = y_TR;
-          Dx = x_BL; Dy = y_BL;
         } else if (dragHandleName === 'BR') {
           Ax = x_TL; Ay = y_TL;
-          Dx = x_BR; Dy = y_BR;
         }
 
         var Cx = currentIntersection.x;

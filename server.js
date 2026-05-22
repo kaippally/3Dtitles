@@ -78,11 +78,12 @@ function loadActiveTemplateOnStartup() {
       const activeName = fs.readFileSync(ACTIVE_FILE, 'utf8').trim();
       if (activeName) {
         const filePath = path.join(SAVES, activeName + '.json');
-        if (fs.existsSync(filePath)) {
-          const content = fs.readFileSync(filePath, 'utf8');
-          appState = JSON.parse(content);
+        try {
+          appState = JSON.parse(fs.readFileSync(filePath, 'utf8'));
           console.log('[startup] Loaded active template:', activeName);
           return activeName;
+        } catch (e) {
+          console.warn('[startup] Template unreadable, using defaults:', activeName);
         }
       }
     }
@@ -294,8 +295,6 @@ app.post('/api/saves/:n', (req, res) => {
     const safeName = path.basename(name);
     const filePath = path.join(SAVES, safeName + '.json');
     fs.writeFileSync(filePath, JSON.stringify(req.body, null, 2));
-
-    // Update active template
     activeTemplateName = safeName;
     fs.writeFileSync(ACTIVE_FILE, safeName, 'utf8');
 
@@ -308,17 +307,10 @@ app.post('/api/saves/:n', (req, res) => {
 
 app.delete('/api/saves/:n', (req, res) => {
   const name = req.params.n;
-  const p = path.join(SAVES, name + '.json');
-  if (fs.existsSync(p)) fs.unlinkSync(p);
-
-  // If deleted template was the active one, clear active template
+  try { fs.unlinkSync(path.join(SAVES, name + '.json')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   if (activeTemplateName === name) {
     activeTemplateName = null;
-    try {
-      if (fs.existsSync(ACTIVE_FILE)) fs.unlinkSync(ACTIVE_FILE);
-    } catch (e) {
-      console.error('Error deleting active template file:', e);
-    }
+    try { fs.unlinkSync(ACTIVE_FILE); } catch (e) {}
   }
   res.json({ ok: true });
 });

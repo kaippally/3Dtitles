@@ -45,19 +45,20 @@ function preloadAudio(url) {
     }
     const audio = new Audio(url);
     audio.preload = 'auto';
-    
     let resolved = false;
     const done = () => {
       if (!resolved) {
         resolved = true;
+        audio.removeEventListener('canplaythrough', done);
+        audio.removeEventListener('error', done);
+        clearTimeout(timeout);
         resolve();
       }
     };
-    
+    // Timeout fallback in case neither event fires
+    const timeout = setTimeout(done, 2000);
     audio.addEventListener('canplaythrough', done);
     audio.addEventListener('error', done);
-    // Timeout fallback after 2 seconds
-    setTimeout(done, 2000);
   });
 }
 
@@ -273,7 +274,6 @@ function buildTrackMesh(track, cb) {
 /* ── Rebuild scene meshes ─────────────────────────────────────────────────── */
 let rebuildCounter = 0;
 
-/* ── Rebuild scene meshes ─────────────────────────────────────────────────── */
 function rebuildScene() {
   if (!activeState || !activeState.tracks) return;
 
@@ -282,11 +282,9 @@ function rebuildScene() {
 
   isSceneReady = false;
 
-  // Clean up existing meshes
   Object.values(trackMeshes).forEach(m => m && scene.remove(m));
   trackMeshes = {};
 
-  // Filter enabled tracks
   const enabledTracks = activeState.tracks.filter(t => t.enabled);
   if (enabledTracks.length === 0) {
     isSceneReady = true;
@@ -296,15 +294,18 @@ function rebuildScene() {
 
   let loadedCount = 0;
   const tempMeshes = {};
-  const audioPromises = [];
+
+  const audioUrls = new Set();
+  enabledTracks.forEach(track => {
+    if (track.audioStart) audioUrls.add(track.audioStart);
+    if (track.audioEnd) audioUrls.add(track.audioEnd);
+  });
+  const audioPromises = Array.from(audioUrls).map(url => preloadAudio(url));
 
   enabledTracks.forEach(track => {
-    // Preload audio
-    if (track.audioStart) audioPromises.push(preloadAudio(track.audioStart));
-    if (track.audioEnd) audioPromises.push(preloadAudio(track.audioEnd));
 
     buildTrackMesh(track, mesh => {
-      // Guard against race conditions
+      // Discard if a newer rebuild was started while this one was loading
       if (currentRebuildId !== rebuildCounter) return;
 
       if (mesh) {
@@ -323,11 +324,9 @@ function rebuildScene() {
 
       loadedCount++;
       if (loadedCount === enabledTracks.length) {
-        // Wait for audios to preload as well
         Promise.all(audioPromises).then(() => {
           if (currentRebuildId !== rebuildCounter) return;
 
-          // Add meshes to the scene
           Object.entries(tempMeshes).forEach(([id, m]) => {
             scene.add(m);
             trackMeshes[id] = m;
@@ -371,9 +370,9 @@ function runAnimation() {
       activeTimeouts.push(tIn);
     }
 
-    // Track Audio Out
-    if (track.audioEnd) {
-      const delay = (track.delay || 0) + ANIM_IN_DURATION;
+    // Track Audio Out (played when the animation ends)
+    if (track.audioEnd && track.duration > 0) {
+      const delay = (track.delay || 0) + ANIM_IN_DURATION + track.duration + ANIM_OUT_DURATION;
       const tOut = setTimeout(() => {
         const audio = new Audio(track.audioEnd);
         activeAudios.push(audio);
@@ -387,7 +386,7 @@ function runAnimation() {
 function resetTimeline() {
   console.log('[Timeline] Reset');
   isAnimating = false;
-  pendingTrigger = false; // Clear any pending trigger
+  pendingTrigger = false;
   stopAllAudio();
   Object.values(trackMeshes).forEach(mesh => {
     if (!mesh) return;
