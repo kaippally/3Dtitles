@@ -330,7 +330,7 @@ function rebuildScene() {
           activeState.tracks.forEach((track, index) => {
             const m = tempMeshes[track.id];
             if (m) {
-              const zOffset = (activeState.tracks.length - index) * 0.02;
+              const zOffset = (activeState.tracks.length - index) * 1.0;
               m.userData.baseZ = ((track.zPos !== undefined ? track.zPos : 0.0) + zOffset) * 0.5;
               m.renderOrder = activeState.tracks.length - index;
               m.traverse(child => {
