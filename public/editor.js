@@ -44,6 +44,16 @@ function updateTrackOutputText(track) {
 /* ── Boot ──────────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function () {
   wireButtons();
+  initResizers();
+  refreshTemplates();
+
+  var searchInput = $id('templatesSearch');
+  if (searchInput) {
+    searchInput.addEventListener('input', function () {
+      filterTemplates(this.value);
+    });
+  }
+
   fetchResolutions(function () {
     fetchFonts(function () {
       fetchState(function () {
@@ -57,7 +67,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
 /* ── Button wiring ─────────────────────────────────────────────────────────── */
 function wireButtons() {
-  $id('btnOpen').addEventListener('click', fileOpen);
   $id('btnSave').addEventListener('click', fileSave);
   $id('btnSaveAs').addEventListener('click', fileSaveAs);
   $id('btnFonts').addEventListener('click', scanFonts);
@@ -65,7 +74,6 @@ function wireButtons() {
   $id('btnTrigger2').addEventListener('click', apiTrigger);
   $id('btnReset').addEventListener('click', apiReset);
   $id('btnReset2').addEventListener('click', apiReset);
-  $id('btnCloseOpen').addEventListener('click', function () { closeModal('openModal'); });
   $id('btnCloseSaveAs').addEventListener('click', function () { closeModal('saveAsModal'); });
   $id('btnDoSaveAs').addEventListener('click', doSaveAs);
 
@@ -75,7 +83,6 @@ function wireButtons() {
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
-      closeModal('openModal');
       closeModal('saveAsModal');
       if (gPreviewAudioObj) {
         gPreviewAudioObj.pause();
@@ -476,29 +483,6 @@ function markDirty() { gDirty = true; $id('fname').classList.add('dirty'); }
 function clearDirty() { gDirty = false; $id('fname').classList.remove('dirty'); }
 function setFilename(n) { gFile = n; $id('fname').textContent = n || 'untitled'; clearDirty(); }
 
-function fileOpen() {
-  fetch('/api/saves')
-    .then(function (r) { return r.json(); })
-    .then(function (saves) {
-      var list = $id('savesList');
-      list.innerHTML = '';
-      if (!saves.length) {
-        list.innerHTML = '<li style="color:var(--muted);cursor:default">No saved scenes</li>';
-      } else {
-        saves.forEach(function (name) {
-          var li = document.createElement('li');
-          li.innerHTML = esc(name) + '<span>open</span>';
-          li.addEventListener('click', function () {
-            loadScene(name);
-            closeModal('openModal');
-          });
-          list.appendChild(li);
-        });
-      }
-      $id('openModal').classList.remove('hidden');
-    });
-}
-
 function loadScene(name) {
   fetch('/api/saves/' + encodeURIComponent(name))
     .then(function (r) { return r.json(); })
@@ -520,6 +504,7 @@ function loadScene(name) {
       renderTracks();
       updateGlobalUI();
       pushState();
+      refreshTemplates();
     });
 }
 
@@ -529,7 +514,10 @@ function fileSave() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(gState),
-  }).then(function () { clearDirty(); });
+  }).then(function () {
+    clearDirty();
+    refreshTemplates();
+  });
 }
 
 function fileSaveAs() {
@@ -545,10 +533,17 @@ function doSaveAs() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(gState),
-  }).then(function () { setFilename(name); closeModal('saveAsModal'); });
+  }).then(function () {
+    setFilename(name);
+    closeModal('saveAsModal');
+    refreshTemplates();
+  });
 }
 
-function closeModal(mid) { $id(mid).classList.add('hidden'); }
+function closeModal(mid) {
+  var el = $id(mid);
+  if (el) el.classList.add('hidden');
+}
 
 function scanFonts() {
   var btn = $id('btnFonts');
@@ -774,5 +769,161 @@ function updatePreview() {
         addMesh(geo);
       } catch (e) { console.error('preview TextGeometry error:', e); }
     });
+  });
+}
+
+/* ── Resizers and Templates panel logic ─────────────────────────────────────── */
+function initResizers() {
+  var resizer1 = $id('resizer1');
+  var resizer2 = $id('resizer2');
+  var templatesPanel = $id('templatesPanel');
+  var previewPanel = document.querySelector('.preview-panel');
+  var main = document.querySelector('.main');
+
+  var savedW1 = localStorage.getItem('templatesPanelWidth');
+  var savedW2 = localStorage.getItem('previewPanelWidth');
+
+  if (savedW1) {
+    templatesPanel.style.width = savedW1 + 'px';
+  } else {
+    templatesPanel.style.width = '240px';
+  }
+
+  if (savedW2) {
+    previewPanel.style.width = savedW2 + 'px';
+  } else {
+    previewPanel.style.width = '50%';
+  }
+
+  // Resizer 1
+  resizer1.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    resizer1.classList.add('dragging');
+    var startX = e.clientX;
+    var startWidth = templatesPanel.offsetWidth;
+
+    function onPointerMove(moveEvent) {
+      var deltaX = moveEvent.clientX - startX;
+      var newWidth = Math.max(180, Math.min(450, startWidth + deltaX));
+      templatesPanel.style.width = newWidth + 'px';
+      localStorage.setItem('templatesPanelWidth', newWidth);
+    }
+
+    function onPointerUp() {
+      resizer1.classList.remove('dragging');
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+    }
+
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+  });
+
+  // Resizer 2
+  resizer2.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    resizer2.classList.add('dragging');
+    var startX = e.clientX;
+    var startWidth = previewPanel.offsetWidth;
+
+    function onPointerMove(moveEvent) {
+      var deltaX = startX - moveEvent.clientX;
+      var maxW = main.clientWidth - templatesPanel.offsetWidth - 200;
+      var newWidth = Math.max(300, Math.min(maxW, startWidth + deltaX));
+      previewPanel.style.width = newWidth + 'px';
+      localStorage.setItem('previewPanelWidth', newWidth);
+      resizePreview();
+    }
+
+    function onPointerUp() {
+      resizer2.classList.remove('dragging');
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+    }
+
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+  });
+}
+
+function refreshTemplates() {
+  fetch('/api/saves')
+    .then(function (r) { return r.json(); })
+    .then(function (saves) {
+      var list = $id('templatesList');
+      if (!list) return;
+      list.innerHTML = '';
+      if (!saves.length) {
+        list.innerHTML = '<li style="color:var(--muted);cursor:default;padding:12px;font-size:12px;">No saved templates</li>';
+      } else {
+        saves.forEach(function (name) {
+          var li = document.createElement('li');
+          li.className = 'templates-item';
+          if (gFile === name) {
+            li.classList.add('active');
+          }
+
+          var nameSpan = document.createElement('span');
+          nameSpan.className = 'templates-item-name';
+          nameSpan.textContent = '🎬 ' + name;
+          li.appendChild(nameSpan);
+
+          var deleteBtn = document.createElement('button');
+          deleteBtn.className = 'templates-item-delete';
+          deleteBtn.innerHTML = '🗑️';
+          deleteBtn.title = 'Delete Template';
+          deleteBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (confirm("Delete template '" + name + "'?")) {
+              deleteTemplate(name);
+            }
+          });
+          li.appendChild(deleteBtn);
+
+          li.addEventListener('click', function () {
+            loadScene(name);
+          });
+
+          list.appendChild(li);
+        });
+      }
+      var searchInput = $id('templatesSearch');
+      if (searchInput && searchInput.value) {
+        filterTemplates(searchInput.value);
+      }
+    });
+}
+
+function deleteTemplate(name) {
+  fetch('/api/saves/' + encodeURIComponent(name), {
+    method: 'DELETE'
+  })
+  .then(function (r) { return r.json(); })
+  .then(function (res) {
+    if (res.ok) {
+      if (gFile === name) {
+        setFilename(null);
+      }
+      refreshTemplates();
+    } else {
+      alert('Delete failed');
+    }
+  })
+  .catch(function (err) {
+    alert('Error deleting template: ' + err.message);
+  });
+}
+
+function filterTemplates(query) {
+  var q = query.toLowerCase();
+  var items = document.querySelectorAll('.templates-item');
+  items.forEach(function (item) {
+    var nameSpan = item.querySelector('.templates-item-name');
+    var name = nameSpan ? nameSpan.textContent.toLowerCase() : '';
+    if (name.includes(q)) {
+      item.classList.remove('hidden');
+    } else {
+      item.classList.add('hidden');
+    }
   });
 }

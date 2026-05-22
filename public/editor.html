@@ -11,7 +11,6 @@
 <header>
   <span class="brand">🎬 3D Title Editor</span>
   <span class="filename" id="fname">untitled</span>
-  <button class="hbtn" id="btnOpen">Open</button>
   <button class="hbtn" id="btnSave">Save</button>
   <button class="hbtn" id="btnSaveAs">Save As&hellip;</button>
   <button class="hbtn" id="btnFonts">&#8635; Fonts</button>
@@ -19,6 +18,15 @@
 </header>
 
 <div class="main">
+  <div class="templates-panel" id="templatesPanel">
+    <div class="templates-title">Saved Templates</div>
+    <div class="templates-search-container">
+      <input type="text" id="templatesSearch" placeholder="Search templates..." />
+    </div>
+    <ul class="templates-list" id="templatesList"></ul>
+  </div>
+  <div class="resizer" id="resizer1"></div>
+
   <div class="tracks-panel">
     <!-- Global Card -->
     <div class="global-card">
@@ -31,6 +39,7 @@
     
     <div id="tracksPanel" style="display:flex; flex-direction:column; gap:10px;"></div>
   </div>
+  <div class="resizer" id="resizer2"></div>
 
   <div class="preview-panel">
     <div class="preview-title">Live Preview</div>
@@ -52,16 +61,7 @@
   <button class="hbtn danger"  id="btnReset2">&#9632; Reset</button>
 </footer>
 
-<!-- Open modal -->
-<div class="overlay hidden" id="openModal">
-  <div class="modal">
-    <h3>Open Scene</h3>
-    <ul class="mlist" id="savesList"></ul>
-    <div class="mbtns">
-      <button class="hbtn" id="btnCloseOpen">Cancel</button>
-    </div>
-  </div>
-</div>
+
 
 <!-- Save As modal -->
 <div class="overlay hidden" id="saveAsModal">

@@ -384,3 +384,116 @@ footer {
   color: var(--accent);
 }
 
+/* ── Templates Panel ────────────────────────────────────────────────────────── */
+.templates-panel {
+  width: 240px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-width: 150px;
+}
+
+.templates-title {
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  border-bottom: 1px solid var(--border);
+}
+
+.templates-search-container {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.templates-search-container input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.templates-search-container input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.templates-list {
+  list-style: none;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.templates-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.templates-item:hover {
+  background: var(--surface2);
+}
+.templates-item.active {
+  background: rgba(88, 166, 255, 0.1);
+  border-left: 3px solid var(--accent);
+  padding-left: 9px; /* adjust for border */
+}
+
+.templates-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.templates-item-delete {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+  margin-left: 8px;
+  opacity: 0.4;
+}
+.templates-item:hover .templates-item-delete {
+  opacity: 1;
+}
+.templates-item-delete:hover {
+  color: var(--danger);
+  background: rgba(248, 81, 73, 0.1);
+}
+
+/* ── Resizer ───────────────────────────────────────────────────────────────── */
+.resizer {
+  width: 6px;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background 0.2s;
+  position: relative;
+  z-index: 10;
+  user-select: none;
+}
+.resizer:hover, .resizer.dragging {
+  background: var(--accent);
+}
+
+
