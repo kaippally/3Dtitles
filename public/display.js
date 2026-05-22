@@ -327,9 +327,15 @@ function rebuildScene() {
         Promise.all(audioPromises).then(() => {
           if (currentRebuildId !== rebuildCounter) return;
 
-          Object.entries(tempMeshes).forEach(([id, m]) => {
-            scene.add(m);
-            trackMeshes[id] = m;
+          activeState.tracks.forEach((track, index) => {
+            const m = tempMeshes[track.id];
+            if (m) {
+              const zOffset = (activeState.tracks.length - index) * 0.02;
+              m.userData.baseZ = ((track.zPos !== undefined ? track.zPos : 0.0) + zOffset) * 0.5;
+              m.renderOrder = activeState.tracks.length - index;
+              scene.add(m);
+              trackMeshes[track.id] = m;
+            }
           });
 
           isSceneReady = true;

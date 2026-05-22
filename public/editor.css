@@ -500,4 +500,23 @@ footer {
   background: var(--accent);
 }
 
+/* ── Drag & Drop sorting ───────────────────────────────────────────────────── */
+.track.dragging {
+  opacity: 0.4;
+  border-style: dashed;
+}
+.track.drag-over-top {
+  border-top: 3px solid #00a2ff !important;
+}
+.track.drag-over-bottom {
+  border-bottom: 3px solid #00a2ff !important;
+}
+.track-header {
+  cursor: grab;
+}
+.track-header:active {
+  cursor: grabbing;
+}
+
+
 

@@ -309,9 +309,7 @@ function normalizeState(state) {
     }
   }
 
-  state.tracks.sort(function (a, b) {
-    return a.id - b.id;
-  });
+  // Tracks are now sortable by dragging; do not enforce id sorting
 
   state.tracks.forEach(function (t) {
     if (t.type === undefined) t.type = (t.id === 4 ? 'image' : 'text');
@@ -385,12 +383,7 @@ function renderTracks() {
   if (!gState) return;
   var panel = $id('tracksPanel');
   panel.innerHTML = '';
-  var sorted = gState.tracks.slice().sort(function (a, b) {
-    var aImg = a.type === 'image' ? 0 : 1;
-    var bImg = b.type === 'image' ? 0 : 1;
-    return aImg - bImg || a.id - b.id;
-  });
-  sorted.forEach(function (t) { panel.appendChild(buildTrack(t)); });
+  gState.tracks.forEach(function (t) { panel.appendChild(buildTrack(t)); });
   // Re-apply highlight after innerHTML wipe
   if (gSelectedTrackId !== null) {
     var card = document.getElementById('track-' + gSelectedTrackId);
@@ -402,6 +395,77 @@ function buildTrack(t) {
   var wrap = document.createElement('div');
   wrap.className = 'track' + (t.enabled ? ' active' : '');
   wrap.id = 'track-' + t.id;
+
+  var isExpanded = localStorage.getItem('track-expanded-' + t.id) !== 'false';
+  var displayStyle = isExpanded ? '' : 'display: none;';
+
+  // Drag-and-drop sort events
+  wrap.draggable = true;
+  wrap.addEventListener('dragstart', function (e) {
+    e.dataTransfer.setData('text/plain', t.id);
+    wrap.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+
+  wrap.addEventListener('dragend', function (e) {
+    wrap.classList.remove('dragging');
+    document.querySelectorAll('.track').forEach(function (el) {
+      el.classList.remove('drag-over-top');
+      el.classList.remove('drag-over-bottom');
+    });
+  });
+
+  wrap.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    var rect = wrap.getBoundingClientRect();
+    var relativeY = e.clientY - rect.top;
+    var isTop = relativeY < rect.height / 2;
+    if (isTop) {
+      wrap.classList.add('drag-over-top');
+      wrap.classList.remove('drag-over-bottom');
+    } else {
+      wrap.classList.add('drag-over-bottom');
+      wrap.classList.remove('drag-over-top');
+    }
+  });
+
+  wrap.addEventListener('dragleave', function (e) {
+    wrap.classList.remove('drag-over-top');
+    wrap.classList.remove('drag-over-bottom');
+  });
+
+  wrap.addEventListener('drop', function (e) {
+    e.preventDefault();
+    wrap.classList.remove('drag-over-top');
+    wrap.classList.remove('drag-over-bottom');
+    
+    var draggedId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+    if (isNaN(draggedId) || draggedId === t.id) return;
+    
+    var rect = wrap.getBoundingClientRect();
+    var relativeY = e.clientY - rect.top;
+    var isTop = relativeY < rect.height / 2;
+    
+    var fromIndex = gState.tracks.findIndex(function (tr) { return tr.id === draggedId; });
+    var toIndex = gState.tracks.findIndex(function (tr) { return tr.id === t.id; });
+    
+    if (fromIndex >= 0 && toIndex >= 0) {
+      var removed = gState.tracks.splice(fromIndex, 1)[0];
+      var tracksCopy = gState.tracks.filter(function (tr) { return tr.id !== draggedId; });
+      var targetIdxInCopy = tracksCopy.findIndex(function (tr) { return tr.id === t.id; });
+      if (isTop) {
+        tracksCopy.splice(targetIdxInCopy, 0, removed);
+      } else {
+        tracksCopy.splice(targetIdxInCopy + 1, 0, removed);
+      }
+      gState.tracks = tracksCopy;
+      
+      renderTracks();
+      updatePreview();
+      schedulePush();
+    }
+  });
 
   wrap.addEventListener('click', function (e) {
     if (gSelectedTrackId !== t.id) {
@@ -423,7 +487,7 @@ function buildTrack(t) {
       '<span class="anim-badge"  id="tBadge-' + t.id + '">' + animLabel + '</span>' +
       '<button class="tog' + (t.enabled ? ' on' : '') + '" id="tTog-' + t.id + '"></button>' +
       '</div>' +
-      '<div class="track-body" id="tbody-' + t.id + '">' +
+      '<div class="track-body" id="tbody-' + t.id + '" style="' + displayStyle + '">' +
       '<div class="row">' +
       '<label>Image</label>' +
       '<input type="text" id="timg-' + t.id + '" value="' + esc(t.image || '') + '" placeholder="Click to select PNG..." style="width:100%; cursor:pointer" readonly>' +
@@ -477,7 +541,14 @@ function buildTrack(t) {
 
     header.addEventListener('click', function (e) {
       if (e.target === tog) return;
-      body.style.display = body.style.display === 'none' ? '' : 'none';
+      var isCollapsed = body.style.display === 'none';
+      if (isCollapsed) {
+        body.style.display = '';
+        localStorage.setItem('track-expanded-' + t.id, 'true');
+      } else {
+        body.style.display = 'none';
+        localStorage.setItem('track-expanded-' + t.id, 'false');
+      }
     });
 
     tog.addEventListener('click', function (e) {
@@ -562,7 +633,7 @@ function buildTrack(t) {
     '<span class="anim-badge"  id="tBadge-' + t.id + '">' + animLabel + '</span>' +
     '<button class="tog' + (t.enabled ? ' on' : '') + '" id="tTog-' + t.id + '"></button>' +
     '</div>' +
-    '<div class="track-body" id="tbody-' + t.id + '">' +
+    '<div class="track-body" id="tbody-' + t.id + '" style="' + displayStyle + '">' +
     '<div class="row">' +
     '<label>Text</label>' +
     '<input type="text" id="ti-' + t.id + '" value="' + esc(t.text) + '">' +
@@ -655,7 +726,14 @@ function buildTrack(t) {
 
   header.addEventListener('click', function (e) {
     if (e.target === tog) return;
-    body.style.display = body.style.display === 'none' ? '' : 'none';
+    var isCollapsed = body.style.display === 'none';
+    if (isCollapsed) {
+      body.style.display = '';
+      localStorage.setItem('track-expanded-' + t.id, 'true');
+    } else {
+      body.style.display = 'none';
+      localStorage.setItem('track-expanded-' + t.id, 'false');
+    }
   });
 
   tog.addEventListener('click', function (e) {
@@ -1293,7 +1371,7 @@ function initPreview() {
       }
     }
     
-    for (var idx = gState.tracks.length - 1; idx >= 0; idx--) {
+    for (var idx = 0; idx < gState.tracks.length; idx++) {
       var track = gState.tracks[idx];
       if (track.enabled) {
         var bounds = getTrackBounds(track, pvCtx);
@@ -1333,7 +1411,7 @@ function initPreview() {
           }
         }
       }
-      for (var idx = gState.tracks.length - 1; idx >= 0; idx--) {
+      for (var idx = 0; idx < gState.tracks.length; idx++) {
         var track = gState.tracks[idx];
         if (track.enabled) {
           var bounds = getTrackBounds(track, pvCtx);
@@ -1533,7 +1611,7 @@ function updatePreview() {
   
   var scale = 130.37;
   
-  gState.tracks.forEach(function (t) {
+  gState.tracks.slice().reverse().forEach(function (t) {
     if (!t.enabled) return;
     
     if (t.type === 'image') {
