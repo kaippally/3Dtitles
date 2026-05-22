@@ -31,12 +31,26 @@ const WSS    = new wsLib.WebSocketServer({ server });
 app.use(express.json({ limit: '50mb' }));
 app.use('/fonts', express.static(FONTS));
 
-// Serve Three.js r128 locally so OBS Browser Source works without internet access
-const THREE_BASE = path.join(BASE, 'node_modules', 'three');
-app.use('/vendor/three.min.js',          (_, res) => res.sendFile(path.join(THREE_BASE, 'build', 'three.min.js')));
-app.use('/vendor/FontLoader.js',         (_, res) => res.sendFile(path.join(THREE_BASE, 'examples', 'js', 'loaders', 'FontLoader.js')));
-app.use('/vendor/TextGeometry.js',       (_, res) => res.sendFile(path.join(THREE_BASE, 'examples', 'js', 'geometries', 'TextGeometry.js')));
-app.use('/vendor/fonts',                 express.static(path.join(THREE_BASE, 'examples', 'fonts')));
+// Serve Three.js r128 locally — no internet required in OBS
+const THREE_BASE   = path.join(BASE, 'node_modules', 'three');
+const PUBLIC_VENDOR = path.join(PUBLIC, 'vendor');
+
+// three.min.js — from node_modules if installed, else public/vendor/
+app.use('/vendor/three.min.js', (_, res) => {
+  const nm = path.join(THREE_BASE, 'build', 'three.min.js');
+  const local = path.join(PUBLIC_VENDOR, 'three.min.js');
+  res.sendFile(fs.existsSync(nm) ? nm : local);
+});
+
+// FontLoader.js + TextGeometry.js — bundled in public/vendor/ (always available)
+app.use('/vendor', express.static(PUBLIC_VENDOR));
+
+// Helvetiker font — from node_modules/three/examples/fonts if installed, else public/vendor/fonts/
+app.use('/vendor/fonts', (req, res, next) => {
+  const nm = path.join(THREE_BASE, 'examples', 'fonts', req.path);
+  if (fs.existsSync(nm)) return res.sendFile(nm);
+  next(); // falls through to express.static on PUBLIC_VENDOR above
+});
 
 app.use(express.static(PUBLIC));          // serves editor.html, editor.js, editor.css, display.html, display.js
 
@@ -136,67 +150,165 @@ function fontToTypeface(font) {
   };
 }
 
-// ── Text shaping (dynamic GSUB — conjuncts, ligatures, required forms) ───────
-const _opFontCache = {};
+// ── Font data cache (opentype + raw buffer for HarfBuzz) ─────────────────────
+const _fontDataCache = {};
 
-function getOpFont(fontId) {
-  if (_opFontCache[fontId]) return _opFontCache[fontId];
+function getFontData(fontId) {
+  if (_fontDataCache[fontId]) return _fontDataCache[fontId];
   let op;
   try { op = require('opentype.js'); } catch (_) { return null; }
   const fontFile = fs.readdirSync(FONTS).find(f =>
     /\.(ttf|otf)$/i.test(f) && f.slice(0, f.lastIndexOf('.')) === fontId);
   if (!fontFile) return null;
-  const font = op.loadSync(path.join(FONTS, fontFile));
-  _opFontCache[fontId] = font;
-  return font;
+  const fontPath = path.join(FONTS, fontFile);
+  const opFont   = op.loadSync(fontPath);
+  const buffer   = fs.readFileSync(fontPath);
+  _fontDataCache[fontId] = { opFont, buffer };
+  return _fontDataCache[fontId];
 }
 
-// POST /api/shape  { fontId, text }
-// Returns shaped glyph path commands (GSUB applied — ligatures, conjuncts etc.)
-// All coordinates normalised to 1 em = 1 unit (Y-up, matching Three.js Y-axis).
-app.post('/api/shape', (req, res) => {
+// ── HarfBuzz loader (WASM init once, then cached) ────────────────────────────
+let _hb = null;
+
+async function loadHB() {
+  if (_hb !== null) return _hb;   // null = "tried and failed", object = success
+  try {
+    let mod = require('harfbuzzjs');
+    // harfbuzzjs may export a Promise, a factory fn, or the API directly
+    if (typeof mod === 'function')       mod = await mod();
+    else if (mod && mod.then)            mod = await mod;
+    // Basic sanity check
+    if (mod && typeof mod.createBlob === 'function') {
+      _hb = mod;
+      console.log('[harfbuzz] Loaded — full Indic shaping active');
+    } else {
+      throw new Error('Unexpected harfbuzzjs export shape');
+    }
+  } catch (e) {
+    _hb = false;   // mark as unavailable so we don't keep retrying
+    console.warn('[harfbuzz] Not available — falling back to opentype.js layout():', e.message);
+  }
+  return _hb;
+}
+
+// Pre-warm HarfBuzz at startup so first request is fast
+loadHB();
+
+// ── POST /api/shape  { fontId, text } ────────────────────────────────────────
+// Pipeline:
+//   HarfBuzz (if loaded) → correct glyph IDs + positions (Indic reordering,
+//   full GSUB conjuncts, GPOS mark placement)
+//   opentype.js → glyph outlines by ID
+//   Combined → glyph path commands, Y-up, 1 em = 1 unit
+app.post('/api/shape', async (req, res) => {
   const { fontId, text } = req.body || {};
   if (!fontId || fontId === 'helvetiker' || !text) {
     return res.json({ useBuiltinFont: true });
   }
-  const font = getOpFont(fontId);
-  if (!font) return res.status(404).json({ error: 'Font not found: ' + fontId });
+  const fontData = getFontData(fontId);
+  if (!fontData) return res.status(404).json({ error: 'Font not found: ' + fontId });
 
   try {
-    const SC = 1 / font.unitsPerEm;          // normalise: 1 em → 1 Three.js unit
+    const { opFont, buffer } = fontData;
+    const SC = 1 / opFont.unitsPerEm;
+    let glyphItems;
 
-    // stringToGlyphs applies the font's GSUB tables:
-    // replaces character sequences with the correct conjunct / ligature glyphs.
-    const glyphs = font.stringToGlyphs(text);
+    const hb = await loadHB();
+
+    if (hb) {
+      // ── HarfBuzz path ───────────────────────────────────────────────────────
+      // bufferGuessSegmentProperties auto-detects Malayalam Unicode range →
+      // sets script=Mlym/Mlm2, direction=LTR, applies full Indic shaping
+      // including pre-base matra reordering that opentype.js cannot do.
+      let hbBlob, hbFace, hbFont, hbBuf;
+      try {
+        hbBlob = hb.createBlob(new Uint8Array(buffer));
+        hbFace = hb.createFace(hbBlob, 0);
+        hbFont = hb.createFont(hbFace);
+        hbBuf  = hb.createBuffer();
+        hb.bufferAddUTF8(hbBuf, text);
+        hb.bufferGuessSegmentProperties(hbBuf);
+        hb.shape(hbFont, hbBuf, []);
+
+        const infos = hb.bufferGetGlyphInfos(hbBuf);
+        const pos   = hb.bufferGetGlyphPositions(hbBuf);
+
+        glyphItems = infos.map((info, i) => ({
+          glyphId:  info.codepoint,   // glyph ID (not Unicode!)
+          xAdvance: pos[i].xAdvance,
+          xOffset:  pos[i].xOffset,
+          yOffset:  pos[i].yOffset,
+        }));
+      } finally {
+        if (hbBuf)  hb.destroyBuffer(hbBuf);
+        if (hbFont) hb.destroyFont(hbFont);
+        if (hbFace) hb.destroyFace(hbFace);
+        if (hbBlob) hb.destroyBlob(hbBlob);
+      }
+
+    } else {
+      // ── opentype.js layout() fallback ──────────────────────────────────────
+      // Better than stringToGlyphs: applies mlm2→mlym→generic GSUB pipeline.
+      // Does not do Indic reordering, but handles most substitutions.
+      let shaped = null;
+      for (const [sc, lang] of [['mlm2','dflt'],['mlym','dflt'],[null,null]]) {
+        try {
+          shaped = sc ? opFont.layout(text, undefined, sc, lang) : opFont.layout(text);
+          if (shaped && (shaped.glyphs || []).length) break;
+        } catch (_) {}
+      }
+      glyphItems = (shaped && shaped.glyphs) ? shaped.glyphs.map(item => {
+        const g   = item.glyph || item;
+        const p   = item.pos   || {};
+        return {
+          glyphId:  g.index != null ? g.index : null,
+          glyph:    g,
+          xAdvance: p.xAdvance != null ? p.xAdvance : (g.advanceWidth || 0),
+          xOffset:  p.xOffset  || 0,
+          yOffset:  p.yOffset  || 0,
+        };
+      }) : opFont.stringToGlyphs(text).map(g => ({
+        glyphId: g.index != null ? g.index : null,
+        glyph:   g,
+        xAdvance: g.advanceWidth || 0,
+        xOffset: 0, yOffset: 0,
+      }));
+    }
+
+    // ── Build absolute path commands (Y-up font coords) ───────────────────────
     let cursorX = 0;
     const commands = [];
 
-    glyphs.forEach((g, i) => {
-      if (g.path && g.path.commands) {
+    for (const item of glyphItems) {
+      // Resolve glyph: by ID (HarfBuzz path) or stored object (fallback)
+      const g  = (item.glyphId != null)
+                   ? opFont.glyphs.get(item.glyphId)
+                   : item.glyph;
+      const bx = cursorX + item.xOffset;
+      const by = item.yOffset;
+
+      if (g && g.path && g.path.commands) {
         for (const c of g.path.commands) {
-          if      (c.type === 'M') commands.push({ type:'M', x:(c.x+cursorX)*SC, y:c.y*SC });
-          else if (c.type === 'L') commands.push({ type:'L', x:(c.x+cursorX)*SC, y:c.y*SC });
+          if      (c.type === 'M') commands.push({ type:'M', x:(c.x+bx)*SC, y:(c.y+by)*SC });
+          else if (c.type === 'L') commands.push({ type:'L', x:(c.x+bx)*SC, y:(c.y+by)*SC });
           else if (c.type === 'Q') commands.push({ type:'Q',
-            x1:(c.x1+cursorX)*SC, y1:c.y1*SC,
-            x :(c.x +cursorX)*SC, y :c.y *SC });
+            x1:(c.x1+bx)*SC, y1:(c.y1+by)*SC,
+            x :(c.x +bx)*SC, y :(c.y +by)*SC });
           else if (c.type === 'C') commands.push({ type:'C',
-            x1:(c.x1+cursorX)*SC, y1:c.y1*SC,
-            x2:(c.x2+cursorX)*SC, y2:c.y2*SC,
-            x :(c.x +cursorX)*SC, y :c.y *SC });
+            x1:(c.x1+bx)*SC, y1:(c.y1+by)*SC,
+            x2:(c.x2+bx)*SC, y2:(c.y2+by)*SC,
+            x :(c.x +bx)*SC, y :(c.y +by)*SC });
           else if (c.type === 'Z') commands.push({ type:'Z' });
         }
       }
-      let kern = 0;
-      try { kern = (i+1 < glyphs.length) ? (font.getKerningValue(g, glyphs[i+1]) || 0) : 0; }
-      catch (_) {}
-      cursorX += (g.advanceWidth || 0) + kern;
-    });
+      cursorX += item.xAdvance;
+    }
 
     res.json({
       commands,
-      ascender:   font.ascender  * SC,
-      descender:  font.descender * SC,
-      totalWidth: cursorX        * SC,
+      ascender:   opFont.ascender  * SC,
+      descender:  opFont.descender * SC,
+      totalWidth: cursorX          * SC,
     });
   } catch (e) {
     console.error('[shape]', e.message);
@@ -237,12 +349,42 @@ app.delete('/api/saves/:n', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Ensure Helvetiker font is available locally ────────────────────────────────
+async function ensureHelvetiker() {
+  const dest = path.join(PUBLIC, 'vendor', 'fonts', 'helvetiker_regular.typeface.json');
+  if (fs.existsSync(dest)) return;
+  // Try node_modules first
+  const nm = path.join(THREE_BASE, 'examples', 'fonts', 'helvetiker_regular.typeface.json');
+  if (fs.existsSync(nm)) {
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(nm, dest);
+    console.log('[fonts] Copied Helvetiker from node_modules');
+    return;
+  }
+  // Download from CDN as last resort
+  console.log('[fonts] Downloading Helvetiker from CDN...');
+  try {
+    const https = require('https');
+    const url   = 'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json';
+    await new Promise((resolve, reject) => {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      const file = fs.createWriteStream(dest);
+      https.get(url, res => { res.pipe(file); file.on('finish', () => { file.close(); resolve(); }); })
+           .on('error', e => { fs.unlink(dest, () => {}); reject(e); });
+    });
+    console.log('[fonts] Helvetiker downloaded OK');
+  } catch (e) {
+    console.warn('[fonts] Could not download Helvetiker:', e.message);
+  }
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 server.listen(PORT, async () => {
   console.log('\n3D Title Editor');
   console.log('  Editor:  http://localhost:' + PORT + '/');
-  console.log('  Display: http://localhost:' + PORT + '/display.html');
+  console.log('  Display: http://localhost:' + PORT + '/display');
   console.log('  Fonts:   ' + FONTS);
   console.log('  Saves:   ' + SAVES + '\n');
+  await ensureHelvetiker();
   await convertFonts();
 });

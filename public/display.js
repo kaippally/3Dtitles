@@ -94,7 +94,7 @@ function connectSocket() {
 
 /* ── Font loading: Helvetiker path ────────────────────────────────────────── */
 function loadBuiltinFont(track, cb) {
-  const url = '/vendor/fonts/helvetiker_regular.typeface.json'; // served locally — no internet needed
+  const url = '/vendor/fonts/helvetiker_regular.typeface.json';
   if (fontCache[url]) { cb(fontCache[url]); return; }
   fontLoader.load(url, f => { fontCache[url] = f; cb(f); }, undefined,
     e => console.error('[FontLoader]', e));
@@ -118,7 +118,7 @@ function fetchShapeData(fontId, text, cb) {
 function commandsToGeometry(shapeData, track) {
   const { commands, ascender, descender } = shapeData;
   const fontHeight = ascender - descender;
-  const scale = track.size / fontHeight;
+  const scale = (track.size * 0.65) / fontHeight;
 
   // THREE.ShapePath correctly handles multiple sub-paths and determines
   // which are outer contours vs holes using winding order.
@@ -135,7 +135,7 @@ function commandsToGeometry(shapeData, track) {
   // isCCW=true: outer contours wind CCW in Y-up space (TrueType convention)
   const shapes = sp.toShapes(true);
   const geo = new THREE.ExtrudeGeometry(shapes, {
-    depth:          track.depth,
+    depth:          track.depth * 0.65,
     bevelEnabled:   track.bevel,
     bevelThickness: 0.02,
     bevelSize:      0.015,
@@ -155,7 +155,7 @@ function buildTrackMesh(track, cb) {
     loadBuiltinFont(track, font => {
       try {
         const geo = new THREE.TextGeometry(text, {
-          font, size: track.size, height: track.depth,
+          font, size: track.size * 0.65, height: track.depth * 0.65,
           curveSegments: 8, bevelEnabled: track.bevel,
           bevelThickness: 0.02, bevelSize: 0.015, bevelSegments: 3,
         });
