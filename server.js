@@ -32,6 +32,9 @@ app.use(express.json({ limit: '50mb' }));
 app.use('/fonts', express.static(FONTS));
 app.use(express.static(PUBLIC));          // serves editor.html, editor.js, editor.css, display.html, display.js
 
+app.get('/', (_, res) => res.sendFile(path.join(PUBLIC, 'editor.html')));
+app.get('/display', (_, res) => res.sendFile(path.join(PUBLIC, 'display.html')));
+
 // ── Default state ─────────────────────────────────────────────────────────────
 let appState = {
   tracks: [
@@ -136,7 +139,7 @@ app.post('/api/state', (req, res) => {
 app.post('/api/trigger', (_, res) => { broadcast({ type: 'trigger' }); res.json({ ok: true }); });
 app.post('/api/reset',   (_, res) => { broadcast({ type: 'reset'   }); res.json({ ok: true }); });
 
-app.get('/api/fonts',      (_, res) => res.json(getFonts()));
+app.get('/api/fonts',      async (_, res) => { await convertFonts(); res.json(getFonts()); });
 app.get('/api/scan-fonts', async (_, res) => { await convertFonts(); res.json(getFonts()); });
 
 app.get('/api/saves', (_, res) =>

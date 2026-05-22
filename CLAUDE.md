@@ -1,10 +1,16 @@
 Update documentation and git after every major step
 The github repo is https://github.com/kaippally/3Dtitles.git
 
-3dtitles/
+3DTitles/
 │
-├── server.js (The script below)
+├── server.js
+├── public/
+│   ├── editor.html
+│   ├── editor.js
+│   ├── editor.css
+│   ├── display.html
+│   └── display.js
 ├── fonts/
-│   └── NotoSerifMalayalam-Regular.ttf (Download and place your font here)
+│   └── NotoSerifMalayalam-Regular.ttf (place font files here; server auto-converts to typeface JSON)
 └── saves/
-    └── (Your saved timelines will automatically appear here as JSON)
+    └── (saved timeline JSON files appear here automatically)
