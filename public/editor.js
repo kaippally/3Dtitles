@@ -352,22 +352,21 @@ function apiReset()   { fetch('/api/reset',   { method: 'POST' }); }
 
 /* ── Live preview ──────────────────────────────────────────────────────────── */
 var pvScene, pvCamera, pvRenderer, pvLoader;
-var pvMeshes    = [null, null, null];
-var pvFontCache = {};
+var pvMeshes      = [null, null, null];
+var pvFontCache   = {};   // Helvetiker cache
+var pvShapeCache  = {};   // shaped-path cache { fontId|||text → shapeData }
 
 function initPreview() {
-  // Three.js already loaded from <script> tags in editor.html
   if (typeof THREE === 'undefined') {
     console.warn('Three.js not loaded yet — preview unavailable');
     return;
   }
-
   var canvas = $id('previewCanvas');
   var W = canvas.clientWidth  || 340;
   var H = canvas.clientHeight || 240;
 
-  pvScene    = new THREE.Scene();
-  pvCamera   = new THREE.PerspectiveCamera(45, W / H, 0.1, 1000);
+  pvScene  = new THREE.Scene();
+  pvCamera = new THREE.PerspectiveCamera(45, W/H, 0.1, 1000);
   pvCamera.position.set(0, 0, 10);
 
   pvRenderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
@@ -392,12 +391,57 @@ function pvAnimLoop() {
   pvRenderer.render(pvScene, pvCamera);
 }
 
-function pvLoadFont(track, cb) {
-  var url = track.font === 'helvetiker'
-    ? 'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json'
-    : '/fonts/' + track.font + '_typeface.json';
+/* Helvetiker fallback via THREE.FontLoader */
+function pvLoadBuiltinFont(cb) {
+  var url = '/vendor/fonts/helvetiker_regular.typeface.json'; // served locally — no internet needed
   if (pvFontCache[url]) { cb(pvFontCache[url]); return; }
   pvLoader.load(url, function(f) { pvFontCache[url] = f; cb(f); });
+}
+
+/* Fetch shaped path data from server (applies GSUB — conjuncts, ligatures) */
+function pvFetchShapeData(fontId, text, cb) {
+  var key = fontId + '|||' + text;
+  if (pvShapeCache[key]) { cb(pvShapeCache[key]); return; }
+  fetch('/api/shape', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ fontId: fontId, text: text }),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { pvShapeCache[key] = d; cb(d); })
+    .catch(function(e) { console.error('pvFetchShapeData:', e); cb(null); });
+}
+
+/* Build ExtrudeGeometry from server-shaped path commands */
+function pvCommandsToGeometry(shapeData, t) {
+  var ascender   = shapeData.ascender;
+  var descender  = shapeData.descender;
+  var fontHeight = ascender - descender;
+  var scale      = (t.size * 0.65) / fontHeight;
+
+  var sp = new THREE.ShapePath();
+  var commands = shapeData.commands;
+  for (var j = 0; j < commands.length; j++) {
+    var cmd = commands[j];
+    switch (cmd.type) {
+      case 'M': sp.moveTo(cmd.x*scale, cmd.y*scale); break;
+      case 'L': sp.lineTo(cmd.x*scale, cmd.y*scale); break;
+      case 'Q': sp.quadraticCurveTo(cmd.x1*scale, cmd.y1*scale, cmd.x*scale, cmd.y*scale); break;
+      case 'C': sp.bezierCurveTo(cmd.x1*scale,cmd.y1*scale, cmd.x2*scale,cmd.y2*scale, cmd.x*scale,cmd.y*scale); break;
+      case 'Z': if (sp.currentPath) sp.currentPath.closePath(); break;
+    }
+  }
+  var shapes = sp.toShapes(true);  // CCW = outer (TrueType Y-up convention)
+  var geo = new THREE.ExtrudeGeometry(shapes, {
+    depth:          t.depth * 0.65,
+    bevelEnabled:   t.bevel,
+    bevelThickness: 0.02,
+    bevelSize:      0.015,
+    bevelSegments:  3,
+    curveSegments:  8,
+  });
+  geo.center();
+  return geo;
 }
 
 function updatePreview() {
@@ -405,26 +449,42 @@ function updatePreview() {
   gState.tracks.forEach(function(t, i) {
     if (pvMeshes[i]) { pvScene.remove(pvMeshes[i]); pvMeshes[i] = null; }
     if (!t.enabled) return;
-    pvLoadFont(t, function(font) {
-      try {
-        var geo = new THREE.TextGeometry(t.text || ' ', {
-          font:          font,
-          size:          t.size  * 0.65,
-          height:        t.depth * 0.65,
-          curveSegments: 8,
-          bevelEnabled:  t.bevel,
-          bevelThickness: 0.02,
-          bevelSize:      0.015,
-          bevelSegments:  3,
-        });
-        geo.center();
-        var col = parseInt(t.color.replace('#', ''), 16);
-        var mat = new THREE.MeshPhongMaterial({ color: col, transparent: true, opacity: 1 });
-        var mesh = new THREE.Mesh(geo, mat);
-        mesh.position.y = t.yPos * 0.5;
-        pvScene.add(mesh);
-        pvMeshes[i] = mesh;
-      } catch (e) { console.error('preview mesh error:', e); }
-    });
+
+    var col = parseInt(t.color.replace('#', ''), 16);
+    var addMesh = function(geo) {
+      if (!geo) return;
+      var mat  = new THREE.MeshPhongMaterial({ color: col, transparent: true, opacity: 1 });
+      var mesh = new THREE.Mesh(geo, mat);
+      mesh.position.y = t.yPos * 0.5;
+      pvScene.add(mesh);
+      pvMeshes[i] = mesh;
+    };
+
+    if (t.font === 'helvetiker') {
+      /* ── Built-in font: THREE.TextGeometry ── */
+      pvLoadBuiltinFont(function(font) {
+        try {
+          var geo = new THREE.TextGeometry(t.text || ' ', {
+            font:           font,
+            size:           t.size  * 0.65,
+            height:         t.depth * 0.65,
+            curveSegments:  8,
+            bevelEnabled:   t.bevel,
+            bevelThickness: 0.02,
+            bevelSize:      0.015,
+            bevelSegments:  3,
+          });
+          geo.center();
+          addMesh(geo);
+        } catch (e) { console.error('preview TextGeometry error:', e); }
+      });
+    } else {
+      /* ── Custom font: shape API → ExtrudeGeometry ── */
+      pvFetchShapeData(t.font, t.text || ' ', function(data) {
+        if (!data || data.useBuiltinFont) return;
+        try { addMesh(pvCommandsToGeometry(data, t)); }
+        catch (e) { console.error('preview shape error:', e); }
+      });
+    }
   });
 }

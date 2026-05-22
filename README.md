@@ -71,7 +71,17 @@ graph TD
 * **Scene Lights**: A combination of a soft `AmbientLight` (to illuminate base colors) and a high-intensity `DirectionalLight` (to create depth, specular highlights, and outline bevels).
 * **Camera Setup**: Utilizes an `OrthographicCamera` centered on the viewport to ensure title meshes do not suffer from perspective distortion when moving near screen edges.
 
-### 2. Mathematical Easing Engines
+### 2. Dynamic Text Shaping Engine (`opentype.js` GSUB)
+
+For custom fonts (anything other than Helvetiker), text is shaped dynamically on the server each time it changes:
+
+1. `POST /api/shape` receives the typed text and font ID.
+2. `font.stringToGlyphs(text)` is called — this applies the font's **GSUB** (Glyph Substitution) OpenType tables, which replace character sequences with the correct conjunct and ligature glyphs. For Malayalam this means sequences like ഷ + ് + ണ → the pre-composed ഷ്ണ glyph.
+3. Each shaped glyph's raw path commands are extracted in **Y-up font coordinates** (no axis flip), offset by the cursor position, and normalised to 1 em = 1 unit.
+4. The client receives these commands and builds a `THREE.ShapePath`, calls `.toShapes(true)`, and feeds the result into `THREE.ExtrudeGeometry` — giving full 3D extrusion and bevels with correct ligature rendering.
+5. Results are cached by `fontId + text` key so subsequent renders are instant.
+
+### 3. Mathematical Easing Engines
 All transition movements are written using pure, framerate-independent mathematical easing algorithms inside [display.js](file:///c:/KC_Assets/3DTitles/public/display.js):
 * **Bounce (Crash Land / Drop)**: `easeOutBounce` models gravity acceleration and realistic ground rebounds:
   $$\text{easeOutBounce}(t) = \begin{cases} 7.5625 t^2 & t < \frac{1}{2.75} \\ 7.5625(t - \frac{1.5}{2.75})^2 + 0.75 & t < \frac{2}{2.75} \\ 7.5625(t - \frac{2.25}{2.75})^2 + 0.9375 & t < \frac{2.5}{2.75} \\ 7.5625(t - \frac{2.625}{2.75})^2 + 0.984375 & \text{otherwise} \end{cases}$$

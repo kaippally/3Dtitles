@@ -102,7 +102,7 @@ header {
 
 /* ── Preview panel ─────────────────────────────────────────────────────────── */
 .preview-panel {
-  width: 360px;
+  width: 60%;
   flex-shrink: 0;
   background: var(--surface);
   border-left: 1px solid var(--border);

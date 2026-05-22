@@ -30,6 +30,14 @@ const WSS    = new wsLib.WebSocketServer({ server });
 
 app.use(express.json({ limit: '50mb' }));
 app.use('/fonts', express.static(FONTS));
+
+// Serve Three.js r128 locally so OBS Browser Source works without internet access
+const THREE_BASE = path.join(BASE, 'node_modules', 'three');
+app.use('/vendor/three.min.js',          (_, res) => res.sendFile(path.join(THREE_BASE, 'build', 'three.min.js')));
+app.use('/vendor/FontLoader.js',         (_, res) => res.sendFile(path.join(THREE_BASE, 'examples', 'js', 'loaders', 'FontLoader.js')));
+app.use('/vendor/TextGeometry.js',       (_, res) => res.sendFile(path.join(THREE_BASE, 'examples', 'js', 'geometries', 'TextGeometry.js')));
+app.use('/vendor/fonts',                 express.static(path.join(THREE_BASE, 'examples', 'fonts')));
+
 app.use(express.static(PUBLIC));          // serves editor.html, editor.js, editor.css, display.html, display.js
 
 app.get('/', (_, res) => res.sendFile(path.join(PUBLIC, 'editor.html')));
@@ -127,6 +135,74 @@ function fontToTypeface(font) {
     original_font_information: font.names,
   };
 }
+
+// ── Text shaping (dynamic GSUB — conjuncts, ligatures, required forms) ───────
+const _opFontCache = {};
+
+function getOpFont(fontId) {
+  if (_opFontCache[fontId]) return _opFontCache[fontId];
+  let op;
+  try { op = require('opentype.js'); } catch (_) { return null; }
+  const fontFile = fs.readdirSync(FONTS).find(f =>
+    /\.(ttf|otf)$/i.test(f) && f.slice(0, f.lastIndexOf('.')) === fontId);
+  if (!fontFile) return null;
+  const font = op.loadSync(path.join(FONTS, fontFile));
+  _opFontCache[fontId] = font;
+  return font;
+}
+
+// POST /api/shape  { fontId, text }
+// Returns shaped glyph path commands (GSUB applied — ligatures, conjuncts etc.)
+// All coordinates normalised to 1 em = 1 unit (Y-up, matching Three.js Y-axis).
+app.post('/api/shape', (req, res) => {
+  const { fontId, text } = req.body || {};
+  if (!fontId || fontId === 'helvetiker' || !text) {
+    return res.json({ useBuiltinFont: true });
+  }
+  const font = getOpFont(fontId);
+  if (!font) return res.status(404).json({ error: 'Font not found: ' + fontId });
+
+  try {
+    const SC = 1 / font.unitsPerEm;          // normalise: 1 em → 1 Three.js unit
+
+    // stringToGlyphs applies the font's GSUB tables:
+    // replaces character sequences with the correct conjunct / ligature glyphs.
+    const glyphs = font.stringToGlyphs(text);
+    let cursorX = 0;
+    const commands = [];
+
+    glyphs.forEach((g, i) => {
+      if (g.path && g.path.commands) {
+        for (const c of g.path.commands) {
+          if      (c.type === 'M') commands.push({ type:'M', x:(c.x+cursorX)*SC, y:c.y*SC });
+          else if (c.type === 'L') commands.push({ type:'L', x:(c.x+cursorX)*SC, y:c.y*SC });
+          else if (c.type === 'Q') commands.push({ type:'Q',
+            x1:(c.x1+cursorX)*SC, y1:c.y1*SC,
+            x :(c.x +cursorX)*SC, y :c.y *SC });
+          else if (c.type === 'C') commands.push({ type:'C',
+            x1:(c.x1+cursorX)*SC, y1:c.y1*SC,
+            x2:(c.x2+cursorX)*SC, y2:c.y2*SC,
+            x :(c.x +cursorX)*SC, y :c.y *SC });
+          else if (c.type === 'Z') commands.push({ type:'Z' });
+        }
+      }
+      let kern = 0;
+      try { kern = (i+1 < glyphs.length) ? (font.getKerningValue(g, glyphs[i+1]) || 0) : 0; }
+      catch (_) {}
+      cursorX += (g.advanceWidth || 0) + kern;
+    });
+
+    res.json({
+      commands,
+      ascender:   font.ascender  * SC,
+      descender:  font.descender * SC,
+      totalWidth: cursorX        * SC,
+    });
+  } catch (e) {
+    console.error('[shape]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ── REST API ──────────────────────────────────────────────────────────────────
 app.get('/api/state',  (_, res) => res.json(appState));
