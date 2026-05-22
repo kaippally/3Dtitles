@@ -43,9 +43,8 @@ function convertUnicodeToCustomASCII(unicodeText) {
   // Look for any Malayalam consonant followed directly by 'ം' and swap them to prevent deletion
   text = text.replace(/([ള])ം/g, '{\u0D02'); // Explicitly preserve 'ള' as '{' before converting 'ം'
 
-  // --- STEP 4: Core Dictionary Mapping ---
   const dictionary = [
-    ['ശ്ശ', '€'], ['ശ്ശം', 'Û'], ['വ്വ', 'Œ'], ['ച്ച', '‚'], ['ല്ല', 'ˆ'], ['്ല', 'ï'],
+    ['ശ്ശ', '€'], ['ശ്ശം', 'Û'], ['വ്വ', 'Œ'], ['ച്ച', '‚'], ['ല്ല', 'ˆ'], ['്ല', 'ï'], ['യ്യ', '‡'],
     ['ക്ക', 'A'], ['ങ്ങ', 'B'], ['ങ്ക', 'C'], ['ഞ്ഞ', 'E'], ['ഞ്ച', 'F'], ['ട്ട', 'G'],
     ['ണ്ണ', 'H'], ['ണ്ട', 'I'], ['ത്ത', 'J'], ['ന്ന', 'K'], ['ന്ത', 'L'], ['പ്പ', 'M'],
     ['മ്മ', 'N'], ['മ്പ', 'O'], ['ഗ്ഗ', 'P'], ['സ്സ', 'T'], ['ള്ള', 'U'], ['ര്‍', 'V'],
@@ -67,9 +66,10 @@ function convertUnicodeToCustomASCII(unicodeText) {
     ['്', 'í'], ['ി', 'ò'], ['ു', 'ó'], ['ൂ', 'ô'], ['ര', 'ø']
   ];
 
-  dictionary.forEach(([unicodeChar, asciiChar]) => {
+  // Sort by length of the source string descending to ensure longest match is replaced first
+  const sortedDictionary = [...dictionary].sort((a, b) => b[0].length - a[0].length);
+  sortedDictionary.forEach(([unicodeChar, asciiChar]) => {
     text = text.replace(new RegExp(unicodeChar, 'g'), asciiChar);
-
   });
 
   return text;
