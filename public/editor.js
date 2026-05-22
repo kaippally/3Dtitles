@@ -266,26 +266,76 @@ function fetchFonts(cb) {
     .catch(function (e) { console.error('fetchFonts:', e); if (cb) cb(); });
 }
 
+function normalizeState(state) {
+  if (!state) return state;
+  if (!state.aspectRatio) state.aspectRatio = '1920x1080';
+  if (!state.tracks) state.tracks = [];
+
+  var defaultTracks = [
+    { id:1, enabled:true,  type:'text', text:'BREAKING NEWS', font:'helvetiker', color:'#ff4444', animation:'crashLandTop', size:1.0, depth:0.30, xPos:0.0, yPos: 1.8, zPos:0.0, delay:   0, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
+    { id:2, enabled:false, type:'text', text:'Price Drop',    font:'helvetiker', color:'#ffcc00', animation:'zipInRight',   size:0.8, depth:0.25, xPos:0.0, yPos: 0.0, zPos:0.0, delay: 800, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
+    { id:3, enabled:false, type:'text', text:'At WalMarts',   font:'helvetiker', color:'#44ff44', animation:'zipInSpin',    size:0.7, depth:0.20, xPos:0.0, yPos:-1.8, zPos:0.0, delay:1600, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
+    { id:4, enabled:false, type:'image', image:'', animation:'static', size:1.0, xPos:0.0, yPos:-1.8, zPos:0.0, delay:0, duration:0, audioStart: '', audioEnd: '' }
+  ];
+
+  for (var i = 1; i <= 4; i++) {
+    var found = false;
+    for (var j = 0; j < state.tracks.length; j++) {
+      if (state.tracks[j].id === i) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      var def = null;
+      for (var k = 0; k < defaultTracks.length; k++) {
+        if (defaultTracks[k].id === i) {
+          def = defaultTracks[k];
+          break;
+        }
+      }
+      if (def) {
+        var cloned = {};
+        for (var key in def) {
+          if (def.hasOwnProperty(key)) {
+            cloned[key] = def[key];
+          }
+        }
+        state.tracks.push(cloned);
+      }
+    }
+  }
+
+  state.tracks.sort(function (a, b) {
+    return a.id - b.id;
+  });
+
+  state.tracks.forEach(function (t) {
+    if (t.type === undefined) t.type = (t.id === 4 ? 'image' : 'text');
+    if (t.image === undefined) t.image = '';
+    if (t.text === undefined) t.text = '';
+    if (t.xPos === undefined) t.xPos = 0.0;
+    if (t.yPos === undefined) t.yPos = 0.0;
+    if (t.zPos === undefined) t.zPos = 0.0;
+    if (t.size === undefined) t.size = 1.0;
+    if (t.depth === undefined) t.depth = 0.20;
+    if (t.delay === undefined) t.delay = 0;
+    if (t.duration === undefined) t.duration = 0;
+    if (t.bevel === undefined) t.bevel = true;
+    if (!t.align) t.align = 'center';
+    if (t.audioStart === undefined) t.audioStart = '';
+    if (t.audioEnd === undefined) t.audioEnd = '';
+    updateTrackOutputText(t);
+  });
+
+  return state;
+}
+
 function fetchState(cb) {
   fetch('/api/state')
     .then(function (r) { return r.json(); })
     .then(function (d) {
-      gState = d;
-      if (gState) {
-        if (!gState.aspectRatio) gState.aspectRatio = '1920x1080';
-        if (gState.tracks) {
-          gState.tracks.forEach(function (t) {
-            updateTrackOutputText(t);
-            if (t.type === undefined) t.type = (t.id === 4 ? 'image' : 'text');
-            if (t.image === undefined) t.image = '';
-            if (t.xPos === undefined) t.xPos = 0.0;
-            if (t.zPos === undefined) t.zPos = 0.0;
-            if (!t.align) t.align = 'center';
-            if (t.audioStart === undefined) t.audioStart = '';
-            if (t.audioEnd === undefined) t.audioEnd = '';
-          });
-        }
-      }
+      gState = normalizeState(d);
       if (cb) cb();
     })
     .catch(function (e) { console.error('fetchState:', e); if (cb) cb(); });
@@ -659,7 +709,35 @@ function pushState() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(gState),
-  }).then(function () { updatePreview(); });
+  })
+  .then(function (r) {
+    if (!r.ok) {
+      console.error('Error pushing state to server');
+    }
+    updatePreview();
+
+    // Auto-save if a template is loaded/saved
+    if (gFile) {
+      fetch('/api/saves/' + encodeURIComponent(gFile), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(gState),
+      })
+      .then(function (res) {
+        if (res.ok) {
+          clearDirty();
+        } else {
+          console.error('Auto-save failed');
+        }
+      })
+      .catch(function (err) {
+        console.error('Auto-save error:', err);
+      });
+    }
+  })
+  .catch(function (e) {
+    console.error('pushState error:', e);
+  });
 }
 
 /* ── File operations ───────────────────────────────────────────────────────── */
@@ -669,29 +747,22 @@ function setFilename(n) { gFile = n; $id('fname').textContent = n || 'untitled';
 
 function loadScene(name) {
   fetch('/api/saves/' + encodeURIComponent(name))
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      gState = data;
-      if (gState) {
-        if (!gState.aspectRatio) gState.aspectRatio = '1920x1080';
-        if (gState.tracks) {
-          gState.tracks.forEach(function (t) {
-            updateTrackOutputText(t);
-            if (t.type === undefined) t.type = (t.id === 4 ? 'image' : 'text');
-            if (t.image === undefined) t.image = '';
-            if (t.xPos === undefined) t.xPos = 0.0;
-            if (t.zPos === undefined) t.zPos = 0.0;
-            if (!t.align) t.align = 'center';
-            if (t.audioStart === undefined) t.audioStart = '';
-            if (t.audioEnd === undefined) t.audioEnd = '';
-          });
-        }
+    .then(function (r) {
+      if (!r.ok) {
+        throw new Error('Failed to load scene');
       }
+      return r.json();
+    })
+    .then(function (data) {
+      gState = normalizeState(data);
       setFilename(name);
       renderTracks();
       updateGlobalUI();
       pushState();
       refreshTemplates();
+    })
+    .catch(function (err) {
+      alert('Error loading scene: ' + err.message);
     });
 }
 
@@ -701,9 +772,20 @@ function fileSave() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(gState),
-  }).then(function () {
+  })
+  .then(function (res) {
+    if (!res.ok) {
+      return res.json().then(function(err) { throw new Error(err.error || 'Server error'); });
+    }
+    return res.json();
+  })
+  .then(function () {
     clearDirty();
     refreshTemplates();
+    console.log('Saved successfully');
+  })
+  .catch(function (err) {
+    alert('Error saving template: ' + err.message);
   });
 }
 
@@ -720,10 +802,20 @@ function doSaveAs() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(gState),
-  }).then(function () {
+  })
+  .then(function (res) {
+    if (!res.ok) {
+      return res.json().then(function(err) { throw new Error(err.error || 'Server error'); });
+    }
+    return res.json();
+  })
+  .then(function () {
     setFilename(name);
     closeModal('saveAsModal');
     refreshTemplates();
+  })
+  .catch(function (err) {
+    alert('Error saving template: ' + err.message);
   });
 }
 

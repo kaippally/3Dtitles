@@ -245,8 +245,19 @@ app.get('/api/saves/:n', (req, res) => {
   fs.existsSync(p) ? res.json(JSON.parse(fs.readFileSync(p, 'utf8'))) : res.status(404).json({ error: 'Not found' });
 });
 app.post('/api/saves/:n', (req, res) => {
-  fs.writeFileSync(path.join(SAVES, req.params.n + '.json'), JSON.stringify(req.body, null, 2));
-  res.json({ ok: true });
+  try {
+    const name = req.params.n;
+    if (!name) {
+      return res.status(400).json({ error: 'Missing template name' });
+    }
+    const safeName = path.basename(name);
+    const filePath = path.join(SAVES, safeName + '.json');
+    fs.writeFileSync(filePath, JSON.stringify(req.body, null, 2));
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error saving template:', e);
+    res.status(500).json({ error: e.message });
+  }
 });
 app.delete('/api/saves/:n', (req, res) => {
   const p = path.join(SAVES, req.params.n + '.json');
