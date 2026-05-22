@@ -1115,131 +1115,129 @@ function clearImageSelection() {
 }
 
 /* ── Live preview ──────────────────────────────────────────────────────────── */
-var pvScene, pvCamera, pvRenderer, pvLoader, pvGroup;
-var pvMeshes = [null, null, null, null];
-var pvSelectionHelper = null;
+var pvCanvas = null;
+var pvCtx = null;
 
-function getZPlane(track) {
-  return (track.zPos !== undefined ? track.zPos : 0.0) * 0.5;
-}
+var gLoaded2DFonts = {};
+var gImageCache = {};
+var gImageAspectCache = {};
 
-function getHandlesFromSelection() {
-  var handles = [];
-  if (pvSelectionHelper) {
-    pvSelectionHelper.traverse(function (child) {
-      if (child.userData && child.userData.isHandle) handles.push(child);
+function get2DFontFamily(fontId) {
+  if (fontId === 'helvetiker') return 'sans-serif';
+  if (gLoaded2DFonts[fontId]) return gLoaded2DFonts[fontId];
+  
+  var fObj = gFonts.find(function (f) { return f.id === fontId; });
+  if (fObj && fObj.rawUrl) {
+    var rawUrl = fObj.rawUrl;
+    gLoaded2DFonts[fontId] = 'loading';
+    var fontFace = new FontFace(fontId, 'url(' + rawUrl + ')');
+    fontFace.load().then(function (loadedFace) {
+      document.fonts.add(loadedFace);
+      gLoaded2DFonts[fontId] = fontId;
+      console.log('2D Font loaded:', fontId);
+      updatePreview();
+    }).catch(function (err) {
+      console.error('Failed loading 2D font:', fontId, err);
+      gLoaded2DFonts[fontId] = 'sans-serif';
+      updatePreview();
     });
+  } else {
+    gLoaded2DFonts[fontId] = 'sans-serif';
   }
-  return handles;
+  return 'sans-serif';
 }
 
-function getLocalRay(raycaster) {
-  pvGroup.updateMatrixWorld();
-  var invMatrix = new THREE.Matrix4().copy(pvGroup.matrixWorld).invert();
-  var localOrigin = raycaster.ray.origin.clone().applyMatrix4(invMatrix);
-  var localDirection = raycaster.ray.direction.clone().transformDirection(invMatrix);
-  return new THREE.Ray(localOrigin, localDirection);
-}
-
-function getLocalIntersection(raycaster, zPlane) {
-  var localRay = getLocalRay(raycaster);
-  if (Math.abs(localRay.direction.z) < 0.0001) return null;
-  var t = (zPlane - localRay.origin.z) / localRay.direction.z;
-  if (t < 0) return null;
-  return new THREE.Vector3().copy(localRay.origin).addScaledVector(localRay.direction, t);
-}
-
-function getTrackIdFromObject(obj) {
-  var curr = obj;
-  while (curr) {
-    if (curr.userData && curr.userData.trackId !== undefined) {
-      return curr.userData.trackId;
-    }
-    curr = curr.parent;
-  }
+function getImage(src) {
+  if (!src) return null;
+  if (gImageCache[src]) return gImageCache[src];
+  
+  var img = new Image();
+  img.onload = function () {
+    gImageCache[src] = img;
+    gImageAspectCache[src] = img.width / img.height;
+    console.log('Image loaded for 2D preview:', src, 'aspect:', gImageAspectCache[src]);
+    updatePreview();
+  };
+  img.onerror = function () {
+    console.error('Failed to load image for 2D preview:', src);
+  };
+  img.src = src;
   return null;
 }
 
-function getTrackLocalBounds(mesh, track) {
-  if (track.type === 'image') {
-    if (mesh && mesh.geometry) {
-      mesh.geometry.computeBoundingBox();
-      var min = mesh.geometry.boundingBox.min;
-      var max = mesh.geometry.boundingBox.max;
-      return {
-        minX: min.x,
-        maxX: max.x,
-        minY: min.y,
-        maxY: max.y
-      };
+function getTrackBounds(t, ctx) {
+  var scale = 130.37;
+  var cx = 960 + (t.xPos !== undefined ? t.xPos : 0.0) * 0.5 * scale;
+  var cy = 540 - (t.yPos !== undefined ? t.yPos : 0.0) * 0.5 * scale;
+  
+  var minX = 0, maxX = 0, minY = 0, maxY = 0;
+  
+  if (t.type === 'image') {
+    var aspect = 1.0;
+    if (t.image && gImageAspectCache[t.image]) {
+      aspect = gImageAspectCache[t.image];
     }
-    return { minX: -0.5, maxX: 0.5, minY: -0.5, maxY: 0.5 };
+    var w_unit = (t.sizeX !== undefined ? t.sizeX : t.size) * aspect;
+    var h_unit = (t.sizeY !== undefined ? t.sizeY : t.size);
+    var w_px = w_unit * scale;
+    var h_px = h_unit * scale;
+    
+    minX = -w_px / 2;
+    maxX = w_px / 2;
+    minY = -h_px / 2;
+    maxY = h_px / 2;
   } else {
-    var textMesh = mesh;
-    if (mesh instanceof THREE.Group) {
-      textMesh = mesh.children[0];
+    var fontSize = t.size * 0.65 * scale;
+    var fontFamily = get2DFontFamily(t.font);
+    ctx.save();
+    ctx.font = fontSize + 'px ' + fontFamily;
+    var text = getRenderingText(t);
+    var metrics = ctx.measureText(text);
+    var w_px = metrics.width;
+    var h_px = fontSize;
+    ctx.restore();
+    
+    var align = t.align || 'center';
+    if (align === 'left') {
+      minX = -w_px;
+      maxX = 0;
+    } else if (align === 'right') {
+      minX = 0;
+      maxX = w_px;
+    } else {
+      minX = -w_px / 2;
+      maxX = w_px / 2;
     }
-    if (textMesh && textMesh.geometry) {
-      textMesh.geometry.computeBoundingBox();
-      var min = textMesh.geometry.boundingBox.min;
-      var max = textMesh.geometry.boundingBox.max;
-      return {
-        minX: min.x,
-        maxX: max.x,
-        minY: min.y,
-        maxY: max.y
-      };
-    }
-    return { minX: -0.5, maxX: 0.5, minY: -0.5, maxY: 0.5 };
+    minY = -h_px / 2;
+    maxY = h_px / 2;
   }
+  
+  return {
+    cx: cx,
+    cy: cy,
+    minX: minX,
+    maxX: maxX,
+    minY: minY,
+    maxY: maxY,
+    gMinX: cx + minX,
+    gMaxX: cx + maxX,
+    gMinY: cy + minY,
+    gMaxY: cy + maxY
+  };
 }
 
-function drawSelectionHelper(mesh, track) {
-  if (!pvGroup) return;
-  if (pvSelectionHelper) {
-    pvSelectionHelper.traverse(function (child) {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
-    pvGroup.remove(pvSelectionHelper);
-    pvSelectionHelper = null;
-  }
+function getClickedHandle(clickX, clickY, bounds) {
+  var HANDLE_SIZE = 12;
+  if (Math.abs(clickX - bounds.gMinX) <= HANDLE_SIZE && Math.abs(clickY - bounds.gMinY) <= HANDLE_SIZE) return 'TL';
+  if (Math.abs(clickX - bounds.gMaxX) <= HANDLE_SIZE && Math.abs(clickY - bounds.gMinY) <= HANDLE_SIZE) return 'TR';
+  if (Math.abs(clickX - bounds.gMinX) <= HANDLE_SIZE && Math.abs(clickY - bounds.gMaxY) <= HANDLE_SIZE) return 'BL';
+  if (Math.abs(clickX - bounds.gMaxX) <= HANDLE_SIZE && Math.abs(clickY - bounds.gMaxY) <= HANDLE_SIZE) return 'BR';
+  return null;
+}
 
-  var bounds = getTrackLocalBounds(mesh, track);
-
-  var helperGroup = new THREE.Group();
-  helperGroup.position.copy(mesh.position);
-
-  var boxGeo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(bounds.minX, bounds.maxY, 0.01),
-    new THREE.Vector3(bounds.maxX, bounds.maxY, 0.01),
-    new THREE.Vector3(bounds.maxX, bounds.minY, 0.01),
-    new THREE.Vector3(bounds.minX, bounds.minY, 0.01),
-    new THREE.Vector3(bounds.minX, bounds.maxY, 0.01)
-  ]);
-  var boxMat = new THREE.LineBasicMaterial({ color: 0x00a2ff });
-  var boxLine = new THREE.Line(boxGeo, boxMat);
-  helperGroup.add(boxLine);
-
-  var handleGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
-  var handleMat = new THREE.MeshBasicMaterial({ color: 0x00a2ff, depthTest: false });
-
-  var corners = [
-    { name: 'TL', x: bounds.minX, y: bounds.maxY },
-    { name: 'TR', x: bounds.maxX, y: bounds.maxY },
-    { name: 'BL', x: bounds.minX, y: bounds.minY },
-    { name: 'BR', x: bounds.maxX, y: bounds.minY }
-  ];
-
-  corners.forEach(function (c) {
-    var handleMesh = new THREE.Mesh(handleGeo, handleMat);
-    handleMesh.position.set(c.x, c.y, 0.01);
-    handleMesh.userData = { isHandle: true, handleName: c.name, trackId: track.id };
-    helperGroup.add(handleMesh);
-  });
-
-  pvGroup.add(helperGroup);
-  pvSelectionHelper = helperGroup;
+function isPointInBounds(clickX, clickY, bounds) {
+  return clickX >= bounds.gMinX && clickX <= bounds.gMaxX &&
+         clickY >= bounds.gMinY && clickY <= bounds.gMaxY;
 }
 
 function syncTrackSidebarInputs(t) {
@@ -1266,267 +1264,250 @@ function syncTrackSidebarInputs(t) {
 }
 
 function initPreview() {
-  if (typeof THREE === 'undefined') {
-    console.warn('Three.js not loaded yet — preview unavailable');
-    return;
-  }
-  var canvas = $id('previewCanvas');
-  pvScene = new THREE.Scene();
-  pvCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-  pvCamera.position.set(0, 0, 10);
-
-  try {
-    pvRenderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
-    pvRenderer.setPixelRatio(devicePixelRatio);
-    pvRenderer.setClearColor(0x000000, 0);
-  } catch (e) {
-    console.error('WebGLRenderer initialization failed:', e);
-    var warning = document.createElement('div');
-    warning.style.cssText = 'position:absolute; top:40%; left:10px; right:10px; background:rgba(255,0,0,0.85); color:white; padding:15px; border-radius:4px; text-align:center; font-weight:bold; z-index:100; font-family:sans-serif;';
-    warning.innerHTML = '⚠️ WebGL initialization failed. 3D Preview is disabled, but timeline editing and saving still work.';
-    canvas.parentElement.style.position = 'relative';
-    canvas.parentElement.appendChild(warning);
-    return;
-  }
-
-  pvScene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  var dl = new THREE.DirectionalLight(0xffffff, 0.8);
-  dl.position.set(5, 5, 5);
-  pvScene.add(dl);
-
-  pvGroup = new THREE.Group();
-  pvScene.add(pvGroup);
-
-  pvLoader = new THREE.FontLoader();
-
+  pvCanvas = $id('previewCanvas');
+  if (!pvCanvas) return;
+  
+  pvCtx = pvCanvas.getContext('2d');
+  pvCanvas.width = 1920;
+  pvCanvas.height = 1080;
+  
   var dragMode = null;
   var dragTrackId = null;
   var dragHandleName = null;
-  var dragStartIntersection = null;
   var dragStartTrackState = null;
-  var previousPointerPosition = { x: 0, y: 0 };
-  var pvRaycaster = new THREE.Raycaster();
-  var pvMouseVec = new THREE.Vector2();
-
-  canvas.style.cursor = 'grab';
-
-  canvas.addEventListener('pointerdown', function (e) {
-    var rect = canvas.getBoundingClientRect();
-    pvMouseVec.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
-    pvRaycaster.setFromCamera(pvMouseVec, pvCamera);
-
-    // 1. Check if we hit a handle of the selected track
-    var intersectsHandles = pvRaycaster.intersectObjects(getHandlesFromSelection());
-    if (intersectsHandles.length > 0) {
-      var handleObj = intersectsHandles[0].object;
-      dragMode = 'resize';
-      dragTrackId = handleObj.userData.trackId;
-      dragHandleName = handleObj.userData.handleName;
-
-      var track = findTrack(dragTrackId);
-      dragStartTrackState = JSON.parse(JSON.stringify(track));
-      dragStartIntersection = getLocalIntersection(pvRaycaster, getZPlane(track));
-
-      canvas.setPointerCapture(e.pointerId);
-      canvas.style.cursor = 'pointer';
-      e.stopPropagation();
-      return;
-    }
-
-    // 2. Check if we hit a track mesh
-    var meshObjects = pvMeshes.filter(function (m) { return !!m; });
-    var intersectsMeshes = pvRaycaster.intersectObjects(meshObjects, true);
-    if (intersectsMeshes.length > 0) {
-      var trackId = getTrackIdFromObject(intersectsMeshes[0].object);
-      if (trackId !== null) {
-        dragMode = 'translate';
-        dragTrackId = trackId;
-
-        var track = findTrack(dragTrackId);
-        dragStartTrackState = JSON.parse(JSON.stringify(track));
-        dragStartIntersection = getLocalIntersection(pvRaycaster, getZPlane(track));
-
-        selectTrack(trackId);
-
-        canvas.setPointerCapture(e.pointerId);
-        canvas.style.cursor = 'move';
-        e.stopPropagation();
-        return;
+  var dragStartClickPos = null;
+  
+  pvCanvas.style.cursor = 'grab';
+  
+  pvCanvas.addEventListener('pointerdown', function (e) {
+    var rect = pvCanvas.getBoundingClientRect();
+    var clickX = ((e.clientX - rect.left) / rect.width) * 1920;
+    var clickY = ((e.clientY - rect.top) / rect.height) * 1080;
+    
+    if (gSelectedTrackId !== null) {
+      var track = findTrack(gSelectedTrackId);
+      if (track && track.enabled) {
+        var bounds = getTrackBounds(track, pvCtx);
+        var handle = getClickedHandle(clickX, clickY, bounds);
+        if (handle) {
+          dragMode = 'resize';
+          dragTrackId = gSelectedTrackId;
+          dragHandleName = handle;
+          dragStartTrackState = JSON.parse(JSON.stringify(track));
+          dragStartClickPos = { x: clickX, y: clickY };
+          
+          pvCanvas.setPointerCapture(e.pointerId);
+          pvCanvas.style.cursor = 'pointer';
+          e.stopPropagation();
+          return;
+        }
       }
     }
-
-    // 3. Hit background — rotate scene
-    dragMode = 'rotate';
-    previousPointerPosition = { x: e.clientX, y: e.clientY };
+    
+    for (var idx = gState.tracks.length - 1; idx >= 0; idx--) {
+      var track = gState.tracks[idx];
+      if (track.enabled) {
+        var bounds = getTrackBounds(track, pvCtx);
+        if (isPointInBounds(clickX, clickY, bounds)) {
+          dragMode = 'translate';
+          dragTrackId = track.id;
+          dragStartTrackState = JSON.parse(JSON.stringify(track));
+          dragStartClickPos = { x: clickX, y: clickY };
+          
+          selectTrack(track.id);
+          
+          pvCanvas.setPointerCapture(e.pointerId);
+          pvCanvas.style.cursor = 'move';
+          e.stopPropagation();
+          return;
+        }
+      }
+    }
+    
     selectTrack(null);
-    canvas.setPointerCapture(e.pointerId);
-    canvas.style.cursor = 'grabbing';
   });
-
-  canvas.addEventListener('pointermove', function (e) {
-    var rect = canvas.getBoundingClientRect();
-    pvMouseVec.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
-    pvRaycaster.setFromCamera(pvMouseVec, pvCamera);
-
+  
+  pvCanvas.addEventListener('pointermove', function (e) {
+    var rect = pvCanvas.getBoundingClientRect();
+    var clickX = ((e.clientX - rect.left) / rect.width) * 1920;
+    var clickY = ((e.clientY - rect.top) / rect.height) * 1080;
+    
     if (!dragMode) {
-      if (pvRaycaster.intersectObjects(getHandlesFromSelection()).length > 0) {
-        canvas.style.cursor = 'pointer';
-        return;
-      }
-      var meshObjects = pvMeshes.filter(function (m) { return !!m; });
-      if (pvRaycaster.intersectObjects(meshObjects, true).length > 0) {
-        canvas.style.cursor = 'move';
-        return;
-      }
-      canvas.style.cursor = 'grab';
-      return;
-    }
-
-    if (dragMode === 'rotate') {
-      var deltaX = e.clientX - previousPointerPosition.x;
-      var deltaY = e.clientY - previousPointerPosition.y;
-
-      if (pvGroup) {
-        pvGroup.rotation.y += deltaX * 0.01;
-        pvGroup.rotation.x += deltaY * 0.01;
-      }
-
-      previousPointerPosition = { x: e.clientX, y: e.clientY };
-      return;
-    }
-
-    if (dragMode === 'translate') {
-      var currentIntersection = getLocalIntersection(pvRaycaster, getZPlane(dragStartTrackState));
-      if (currentIntersection && dragStartIntersection) {
-        var translateDeltaX = currentIntersection.x - dragStartIntersection.x;
-        var translateDeltaY = currentIntersection.y - dragStartIntersection.y;
-
-        var track = findTrack(dragTrackId);
-        track.xPos = dragStartTrackState.xPos + translateDeltaX * 2.0;
-        track.yPos = dragStartTrackState.yPos + translateDeltaY * 2.0;
-
-        syncTrackSidebarInputs(track);
-        schedulePush();
-      }
-      return;
-    }
-
-    if (dragMode === 'resize') {
-      var currentIntersection = getLocalIntersection(pvRaycaster, getZPlane(dragStartTrackState));
-      if (currentIntersection && dragStartIntersection) {
-        var origMesh = null;
-        for (var idx = 0; idx < gState.tracks.length; idx++) {
-          if (gState.tracks[idx].id === dragTrackId) {
-            origMesh = pvMeshes[idx];
-            break;
+      if (gSelectedTrackId !== null) {
+        var track = findTrack(gSelectedTrackId);
+        if (track && track.enabled) {
+          var bounds = getTrackBounds(track, pvCtx);
+          var handle = getClickedHandle(clickX, clickY, bounds);
+          if (handle) {
+            pvCanvas.style.cursor = 'pointer';
+            return;
           }
         }
-        if (!origMesh) return;
-
-        var origBounds = getTrackLocalBounds(origMesh, dragStartTrackState);
-        var origW = Math.abs(origBounds.maxX - origBounds.minX);
-        var origH = Math.abs(origBounds.maxY - origBounds.minY);
-
-        // Compute initial corners in local space
-        var sx = dragStartTrackState.xPos * 0.5;
-        var sy = dragStartTrackState.yPos * 0.5;
-        var x_TL = sx + origBounds.minX;
-        var y_TL = sy + origBounds.maxY;
-        var x_TR = sx + origBounds.maxX;
-        var y_TR = sy + origBounds.maxY;
-        var x_BL = sx + origBounds.minX;
-        var y_BL = sy + origBounds.minY;
-        var x_BR = sx + origBounds.maxX;
-        var y_BR = sy + origBounds.minY;
-
-        // Ax/Ay = anchor corner (stays fixed), opposite of the dragged handle
-        var Ax = 0, Ay = 0;
-
-        if (dragHandleName === 'TL') {
-          Ax = x_BR; Ay = y_BR;
-        } else if (dragHandleName === 'TR') {
-          Ax = x_BL; Ay = y_BL;
-        } else if (dragHandleName === 'BL') {
-          Ax = x_TR; Ay = y_TR;
-        } else if (dragHandleName === 'BR') {
-          Ax = x_TL; Ay = y_TL;
-        }
-
-        var Cx = currentIntersection.x;
-        var Cy = currentIntersection.y;
-
-        var newW = Math.abs(Cx - Ax);
-        var newH = Math.abs(Cy - Ay);
-
-        var keepAspect = (dragStartTrackState.type === 'text') || e.ctrlKey || e.metaKey;
-        var signX = Cx > Ax ? 1 : -1;
-        var signY = Cy > Ay ? 1 : -1;
-
-        if (keepAspect) {
-          var diagX = signX * origW;
-          var diagY = signY * origH;
-          var dot = (Cx - Ax) * diagX + (Cy - Ay) * diagY;
-          var diagLenSq = diagX * diagX + diagY * diagY;
-          var tDiag = Math.max(0.01, dot / diagLenSq);
-          newW = tDiag * origW;
-          newH = tDiag * origH;
-        }
-
-        var newDx = Ax + signX * newW;
-        var newDy = Ay + signY * newH;
-
-        var newCenterX = (Ax + newDx) / 2;
-        var newCenterY = (Ay + newDy) / 2;
-
-        var track = findTrack(dragTrackId);
-        var scaleX = newW / origW;
-
-        if (track.type === 'text') {
-          track.size = dragStartTrackState.size * scaleX;
-          track.sizeX = track.size;
-          track.sizeY = track.size;
-        } else {
-          var aspect = origMesh.userData.aspect || 1;
-          track.sizeX = newW / aspect;
-          track.sizeY = newH;
-          track.size = track.sizeY;
-        }
-
-        track.xPos = newCenterX * 2;
-        track.yPos = newCenterY * 2;
-
-        syncTrackSidebarInputs(track);
-        schedulePush();
       }
+      for (var idx = gState.tracks.length - 1; idx >= 0; idx--) {
+        var track = gState.tracks[idx];
+        if (track.enabled) {
+          var bounds = getTrackBounds(track, pvCtx);
+          if (isPointInBounds(clickX, clickY, bounds)) {
+            pvCanvas.style.cursor = 'move';
+            return;
+          }
+        }
+      }
+      pvCanvas.style.cursor = 'grab';
+      return;
+    }
+    
+    var scale = 130.37;
+    
+    if (dragMode === 'translate') {
+      var track = findTrack(dragTrackId);
+      var dx = clickX - dragStartClickPos.x;
+      var dy = clickY - dragStartClickPos.y;
+      
+      track.xPos = dragStartTrackState.xPos + dx * 2.0 / scale;
+      track.yPos = dragStartTrackState.yPos - dy * 2.0 / scale;
+      
+      syncTrackSidebarInputs(track);
+      schedulePush();
+      updatePreview();
+      return;
+    }
+    
+    if (dragMode === 'resize') {
+      var track = findTrack(dragTrackId);
+      var bounds = getTrackBounds(dragStartTrackState, pvCtx);
+      
+      var origW = bounds.maxX - bounds.minX;
+      var origH = bounds.maxY - bounds.minY;
+      
+      var x_TL = bounds.gMinX, y_TL = bounds.gMinY;
+      var x_TR = bounds.gMaxX, y_TR = bounds.gMinY;
+      var x_BL = bounds.gMinX, y_BL = bounds.gMaxY;
+      var x_BR = bounds.gMaxX, y_BR = bounds.gMaxY;
+      
+      var Ax = 0, Ay = 0;
+      var Hx = 0, Hy = 0;
+      
+      if (dragHandleName === 'TL') {
+        Ax = x_BR; Ay = y_BR;
+        Hx = x_TL; Hy = y_TL;
+      } else if (dragHandleName === 'TR') {
+        Ax = x_BL; Ay = y_BL;
+        Hx = x_TR; Hy = y_TR;
+      } else if (dragHandleName === 'BL') {
+        Ax = x_TR; Ay = y_TR;
+        Hx = x_BL; Hy = y_BL;
+      } else if (dragHandleName === 'BR') {
+        Ax = x_TL; Ay = y_TL;
+        Hx = x_BR; Hy = y_BR;
+      }
+      
+      var Cx = clickX;
+      var Cy = clickY;
+      
+      var newW = Math.abs(Cx - Ax);
+      var newH = Math.abs(Cy - Ay);
+      
+      var keepAspect = (dragStartTrackState.type === 'text') || e.ctrlKey || e.metaKey;
+      
+      var newHx = Cx;
+      var newHy = Cy;
+      
+      if (keepAspect) {
+        var diagX = Hx - Ax;
+        var diagY = Hy - Ay;
+        var vX = Cx - Ax;
+        var vY = Cy - Ay;
+        var dot = vX * diagX + vY * diagY;
+        var diagLenSq = diagX * diagX + diagY * diagY;
+        var tDiag = Math.max(0.01, dot / diagLenSq);
+        
+        newW = tDiag * origW;
+        newH = tDiag * origH;
+        
+        newHx = Ax + tDiag * diagX;
+        newHy = Ay + tDiag * diagY;
+      }
+      
+      var newCenterX = (Ax + newHx) / 2;
+      var newCenterY = (Ay + newHy) / 2;
+      
+      var scaleX = newW / origW;
+      
+      if (track.type === 'text') {
+        track.size = dragStartTrackState.size * scaleX;
+        track.sizeX = track.size;
+        track.sizeY = track.size;
+      } else {
+        var aspect = 1.0;
+        if (track.image && gImageAspectCache[track.image]) aspect = gImageAspectCache[track.image];
+        track.sizeX = newW / (scale * aspect);
+        track.sizeY = newH / scale;
+        track.size = track.sizeY;
+      }
+      
+      track.xPos = (newCenterX - 960) / (0.5 * scale);
+      track.yPos = (540 - newCenterY) / (0.5 * scale);
+      
+      syncTrackSidebarInputs(track);
+      schedulePush();
+      updatePreview();
     }
   });
-
+  
   var stopDrag = function (e) {
     if (!dragMode) return;
-    canvas.releasePointerCapture(e.pointerId);
+    pvCanvas.releasePointerCapture(e.pointerId);
     dragMode = null;
     dragTrackId = null;
     dragHandleName = null;
-    dragStartIntersection = null;
     dragStartTrackState = null;
-    canvas.style.cursor = 'grab';
+    dragStartClickPos = null;
+    pvCanvas.style.cursor = 'grab';
   };
-
-  canvas.addEventListener('pointerup', stopDrag);
-  canvas.addEventListener('pointercancel', stopDrag);
-
+  
+  pvCanvas.addEventListener('pointerup', stopDrag);
+  pvCanvas.addEventListener('pointercancel', stopDrag);
+  
+  pvCanvas.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    if (!pvCanvas.classList.contains('drag-over')) {
+      pvCanvas.classList.add('drag-over');
+      updatePreview();
+    }
+  });
+  
+  pvCanvas.addEventListener('dragleave', function (e) {
+    pvCanvas.classList.remove('drag-over');
+    updatePreview();
+  });
+  
+  pvCanvas.addEventListener('drop', function (e) {
+    e.preventDefault();
+    pvCanvas.classList.remove('drag-over');
+    
+    var files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      var file = files[0];
+      if (file.type.match('image.*')) {
+        uploadPastedImage(file);
+      }
+    } else {
+      updatePreview();
+    }
+  });
+  
   window.addEventListener('resize', resizePreview);
   resizePreview();
-  pvAnimLoop();
   updatePreview();
 }
 
 function resizePreview() {
-  if (!pvRenderer || !pvCamera) return;
-  var canvas = $id('previewCanvas');
-  var container = canvas.parentElement;
+  if (!pvCanvas) return;
+  var container = pvCanvas.parentElement;
   if (!container) return;
-
+  
   var aspectParts = ['16', '9'];
   if (gState && gState.aspectRatio) {
     var parts = gState.aspectRatio.split('x');
@@ -1540,7 +1521,7 @@ function resizePreview() {
     maxW = container.clientWidth;
     maxH = container.clientHeight;
   }
-
+  
   var containerRatio = maxW / maxH;
   var W, H;
   if (containerRatio > targetRatio) {
@@ -1550,140 +1531,123 @@ function resizePreview() {
     W = maxW;
     H = W / targetRatio;
   }
-
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
-  pvCamera.aspect = W / H;
-  pvCamera.updateProjectionMatrix();
-  pvRenderer.setSize(W, H, false);
-}
-
-function pvAnimLoop() {
-  requestAnimationFrame(pvAnimLoop);
-  if (!pvRenderer) return;
-  pvRenderer.render(pvScene, pvCamera);
+  
+  pvCanvas.style.width = W + 'px';
+  pvCanvas.style.height = H + 'px';
 }
 
 function updatePreview() {
-  if (!pvScene || !pvLoader || !gState) return;
-
-  if (pvSelectionHelper) {
-    if (pvGroup) pvGroup.remove(pvSelectionHelper);
-    pvSelectionHelper = null;
-  }
-
-  gState.tracks.forEach(function (t, i) {
-    if (pvMeshes[i]) { if (pvGroup) pvGroup.remove(pvMeshes[i]); pvMeshes[i] = null; }
+  if (!pvCtx || !gState) return;
+  
+  pvCtx.fillStyle = '#111';
+  pvCtx.fillRect(0, 0, 1920, 1080);
+  
+  var scale = 130.37;
+  
+  gState.tracks.forEach(function (t) {
     if (!t.enabled) return;
-
+    
     if (t.type === 'image') {
       if (!t.image) return;
-      var loader = new THREE.TextureLoader();
-      loader.load(t.image, function (texture) {
-        var currentTrack = findTrack(t.id);
-        if (!currentTrack || !currentTrack.enabled || currentTrack.image !== t.image) return;
-
-        var img = texture.image;
-        var aspect = img ? (img.width / img.height) : 1;
-        var w = (t.sizeX !== undefined ? t.sizeX : t.size) * aspect;
-        var h = (t.sizeY !== undefined ? t.sizeY : t.size);
-        var geo = new THREE.PlaneGeometry(w, h);
-
-        var mat = new THREE.MeshBasicMaterial({
-          map: texture,
-          transparent: true,
-          opacity: 1,
-          side: THREE.DoubleSide
-        });
-
-        var mesh = new THREE.Mesh(geo, mat);
-        mesh.position.x = (t.xPos !== undefined ? t.xPos : 0.0) * 0.5;
-        mesh.position.y = t.yPos * 0.5;
-        mesh.position.z = (t.zPos !== undefined ? t.zPos : 0.0) * 0.5;
-        mesh.userData = { trackId: t.id, aspect: aspect };
-
-        if (pvMeshes[i]) { if (pvGroup) pvGroup.remove(pvMeshes[i]); }
-        if (pvGroup) pvGroup.add(mesh);
-        pvMeshes[i] = mesh;
-
-        if (gSelectedTrackId === t.id) {
-          drawSelectionHelper(mesh, t);
-        }
-      }, undefined, function (err) {
-        console.error('Failed to load preview texture:', t.image, err);
-      });
+      var img = getImage(t.image);
+      if (!img) return;
+      
+      var aspect = img.width / img.height;
+      var w_unit = (t.sizeX !== undefined ? t.sizeX : t.size) * aspect;
+      var h_unit = (t.sizeY !== undefined ? t.sizeY : t.size);
+      var w_px = w_unit * scale;
+      var h_px = h_unit * scale;
+      
+      var cx = 960 + (t.xPos !== undefined ? t.xPos : 0.0) * 0.5 * scale;
+      var cy = 540 - (t.yPos !== undefined ? t.yPos : 0.0) * 0.5 * scale;
+      
+      pvCtx.drawImage(img, cx - w_px / 2, cy - h_px / 2, w_px, h_px);
       return;
     }
-
-    var col = parseInt(t.color.replace('#', ''), 16);
-    var addMesh = function (geo) {
-      if (!geo) return;
-      var mat = new THREE.MeshPhongMaterial({ color: col, transparent: true, opacity: 1 });
-      var mainMesh = new THREE.Mesh(geo, mat);
-
-      var meshToAdd;
-      if (t.shadowEnabled) {
-        var trackGroup = new THREE.Group();
-        trackGroup.add(mainMesh);
-
-        var shadowColorVal = parseInt((t.shadowColor || '#000000').replace('#', ''), 16);
-        var shadowBlur = t.shadowBlur !== undefined ? t.shadowBlur : 0.0;
-        var shadowDepth = t.shadowDepth !== undefined ? t.shadowDepth : 0.2;
-
-        var sx = shadowDepth * 0.1;
-        var sy = -shadowDepth * 0.1;
-        var sz = -0.02;
-
-        if (shadowBlur <= 0) {
-          var shadowMat = new THREE.MeshBasicMaterial({ color: shadowColorVal, transparent: true, opacity: 0.8 });
-          var shadowMesh = new THREE.Mesh(geo, shadowMat);
-          shadowMesh.position.set(sx, sy, sz);
-          shadowMesh.userData = { isShadow: true, baseOpacity: 0.8 };
-          trackGroup.add(shadowMesh);
-        } else {
-          var offsets = [
-            { x: sx, y: sy, baseOpacity: 0.3 },
-            { x: sx - shadowBlur * 0.02, y: sy + shadowBlur * 0.02, baseOpacity: 0.125 },
-            { x: sx + shadowBlur * 0.02, y: sy + shadowBlur * 0.02, baseOpacity: 0.125 },
-            { x: sx - shadowBlur * 0.02, y: sy - shadowBlur * 0.02, baseOpacity: 0.125 },
-            { x: sx + shadowBlur * 0.02, y: sy - shadowBlur * 0.02, baseOpacity: 0.125 }
-          ];
-          offsets.forEach(function (offset) {
-            var shadowMat = new THREE.MeshBasicMaterial({ color: shadowColorVal, transparent: true, opacity: offset.baseOpacity });
-            var shadowMesh = new THREE.Mesh(geo, shadowMat);
-            shadowMesh.position.set(offset.x, offset.y, sz);
-            shadowMesh.userData = { isShadow: true, baseOpacity: offset.baseOpacity };
-            trackGroup.add(shadowMesh);
-          });
-        }
-        meshToAdd = trackGroup;
-      } else {
-        meshToAdd = mainMesh;
-      }
-
-      meshToAdd.position.x = (t.xPos !== undefined ? t.xPos : 0.0) * 0.5;
-      meshToAdd.position.y = t.yPos * 0.5;
-      meshToAdd.position.z = (t.zPos !== undefined ? t.zPos : 0.0) * 0.5;
-      meshToAdd.userData = { trackId: t.id };
-
-      if (pvGroup) pvGroup.add(meshToAdd);
-      pvMeshes[i] = meshToAdd;
-
-      if (gSelectedTrackId === t.id) {
-        drawSelectionHelper(meshToAdd, t);
-      }
-    };
-
-    loadFontShared(pvLoader, t.font, function (font) {
-      if (!font) return;
-      try {
-        var text = getRenderingText(t);
-        var geo = new THREE.TextGeometry(text, getTextGeometryOptions(t, font));
-        alignGeometry(geo, t.align || 'center');
-        addMesh(geo);
-      } catch (e) { console.error('preview TextGeometry error:', e); }
-    });
+    
+    var fontSize = t.size * 0.65 * scale;
+    var fontFamily = get2DFontFamily(t.font);
+    
+    pvCtx.font = fontSize + 'px ' + fontFamily;
+    pvCtx.textBaseline = 'middle';
+    
+    var align = t.align || 'center';
+    if (align === 'left') {
+      pvCtx.textAlign = 'right';
+    } else if (align === 'right') {
+      pvCtx.textAlign = 'left';
+    } else {
+      pvCtx.textAlign = 'center';
+    }
+    
+    var text = getRenderingText(t);
+    var cx = 960 + (t.xPos !== undefined ? t.xPos : 0.0) * 0.5 * scale;
+    var cy = 540 - (t.yPos !== undefined ? t.yPos : 0.0) * 0.5 * scale;
+    
+    if (t.shadowEnabled) {
+      pvCtx.save();
+      var shadowColorVal = t.shadowColor || '#000000';
+      var shadowBlurVal = t.shadowBlur !== undefined ? t.shadowBlur : 0.0;
+      var shadowDepthVal = t.shadowDepth !== undefined ? t.shadowDepth : 0.2;
+      
+      pvCtx.shadowColor = shadowColorVal;
+      pvCtx.shadowBlur = shadowBlurVal * 0.02 * scale;
+      pvCtx.shadowOffsetX = shadowDepthVal * 0.1 * scale;
+      pvCtx.shadowOffsetY = shadowDepthVal * 0.1 * scale;
+      
+      pvCtx.fillStyle = t.color;
+      pvCtx.fillText(text, cx, cy);
+      pvCtx.restore();
+    } else {
+      pvCtx.fillStyle = t.color;
+      pvCtx.fillText(text, cx, cy);
+    }
   });
+  
+  if (gSelectedTrackId !== null) {
+    var selectedTrack = findTrack(gSelectedTrackId);
+    if (selectedTrack && selectedTrack.enabled) {
+      var bounds = getTrackBounds(selectedTrack, pvCtx);
+      
+      pvCtx.strokeStyle = '#00a2ff';
+      pvCtx.lineWidth = 2;
+      pvCtx.setLineDash([6, 4]);
+      pvCtx.strokeRect(bounds.gMinX, bounds.gMinY, bounds.gMaxX - bounds.gMinX, bounds.gMaxY - bounds.gMinY);
+      pvCtx.setLineDash([]);
+      
+      pvCtx.fillStyle = '#00a2ff';
+      var HANDLE_SIZE = 12;
+      var half = HANDLE_SIZE / 2;
+      
+      var corners = [
+        { x: bounds.gMinX, y: bounds.gMinY },
+        { x: bounds.gMaxX, y: bounds.gMinY },
+        { x: bounds.gMinX, y: bounds.gMaxY },
+        { x: bounds.gMaxX, y: bounds.gMaxY }
+      ];
+      
+      corners.forEach(function (c) {
+        pvCtx.fillRect(c.x - half, c.y - half, HANDLE_SIZE, HANDLE_SIZE);
+      });
+    }
+  }
+  
+  if (pvCanvas && pvCanvas.classList.contains('drag-over')) {
+    pvCtx.strokeStyle = '#58a6ff';
+    pvCtx.lineWidth = 6;
+    pvCtx.setLineDash([15, 10]);
+    pvCtx.strokeRect(10, 10, 1920 - 20, 1080 - 20);
+    pvCtx.setLineDash([]);
+    
+    pvCtx.fillStyle = 'rgba(88, 166, 255, 0.15)';
+    pvCtx.fillRect(10, 10, 1920 - 20, 1080 - 20);
+    
+    pvCtx.fillStyle = '#58a6ff';
+    pvCtx.font = 'bold 40px sans-serif';
+    pvCtx.textAlign = 'center';
+    pvCtx.textBaseline = 'middle';
+    pvCtx.fillText('Drop image to replace and save', 960, 540);
+  }
 }
 
 /* ── Resizers and Templates panel logic ─────────────────────────────────────── */

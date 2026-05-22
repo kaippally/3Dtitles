@@ -109,15 +109,28 @@ WSS.on('connection', ws => {
 const TYPEFACE_VERSION = 2;   // bump to force regeneration of all cached JSONs
 
 function getFonts() {
-  const list = [{ id: 'helvetiker', label: 'Helvetiker Regular (Built-in)', url: null }];
+  const list = [{ id: 'helvetiker', label: 'Helvetiker Regular (Built-in)', url: null, rawUrl: null }];
   try {
     for (const f of fs.readdirSync(FONTS)) {
       if (!f.endsWith('_typeface.json')) continue;
       const id = f.slice(0, -14);
+      
+      let rawUrl = null;
+      if (fs.existsSync(path.join(FONTS, id + '.ttf'))) {
+        rawUrl = '/fonts/' + id + '.ttf';
+      } else if (fs.existsSync(path.join(FONTS, id + '.otf'))) {
+        rawUrl = '/fonts/' + id + '.otf';
+      } else if (fs.existsSync(path.join(FONTS, id + '.TTF'))) {
+        rawUrl = '/fonts/' + id + '.TTF';
+      } else if (fs.existsSync(path.join(FONTS, id + '.OTF'))) {
+        rawUrl = '/fonts/' + id + '.OTF';
+      }
+
       list.push({
         id,
         label: id.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
         url:   '/fonts/' + f,
+        rawUrl
       });
     }
   } catch (_) {}
