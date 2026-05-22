@@ -198,9 +198,9 @@ function triggerAnimation() {
       activeTimeouts.push(tIn);
     }
 
-    // Track Audio Out (scheduled only if track.duration > 0, which is finite hold duration)
-    if (track.audioEnd && track.duration > 0) {
-      const delay = (track.delay || 0) + ANIM_IN_DURATION + track.duration;
+    // Track Audio Out (played when the animation in ends and has fully appeared)
+    if (track.audioEnd) {
+      const delay = (track.delay || 0) + ANIM_IN_DURATION;
       const tOut = setTimeout(() => {
         const audio = new Audio(track.audioEnd);
         activeAudios.push(audio);
