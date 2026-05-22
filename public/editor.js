@@ -693,13 +693,18 @@ function buildTrack(t) {
 
     var dragHandle = wrap.querySelector('.drag-handle');
     if (dragHandle) {
+      dragHandle.addEventListener('mouseenter', function () {
+        wrap.draggable = true;
+      });
+      dragHandle.addEventListener('mouseleave', function () {
+        if (!wrap.classList.contains('dragging')) {
+          wrap.draggable = false;
+        }
+      });
       dragHandle.addEventListener('mousedown', function () {
         wrap.draggable = true;
       });
       dragHandle.addEventListener('mouseup', function () {
-        wrap.draggable = false;
-      });
-      dragHandle.addEventListener('mouseleave', function () {
         if (!wrap.classList.contains('dragging')) {
           wrap.draggable = false;
         }
@@ -953,13 +958,18 @@ function buildTrack(t) {
 
   var dragHandle = wrap.querySelector('.drag-handle');
   if (dragHandle) {
+    dragHandle.addEventListener('mouseenter', function () {
+      wrap.draggable = true;
+    });
+    dragHandle.addEventListener('mouseleave', function () {
+      if (!wrap.classList.contains('dragging')) {
+        wrap.draggable = false;
+      }
+    });
     dragHandle.addEventListener('mousedown', function () {
       wrap.draggable = true;
     });
     dragHandle.addEventListener('mouseup', function () {
-      wrap.draggable = false;
-    });
-    dragHandle.addEventListener('mouseleave', function () {
       if (!wrap.classList.contains('dragging')) {
         wrap.draggable = false;
       }
