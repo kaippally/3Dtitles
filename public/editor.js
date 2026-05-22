@@ -146,6 +146,32 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  var chkShowGrid = $id('chkShowGrid');
+  var selGridSize = $id('selGridSize');
+  if (chkShowGrid && selGridSize) {
+    var savedShowGrid = localStorage.getItem('showPreviewGrid');
+    var savedGridSize = localStorage.getItem('previewGridSize');
+    
+    if (savedShowGrid !== null) {
+      chkShowGrid.checked = (savedShowGrid === 'true');
+      selGridSize.style.display = chkShowGrid.checked ? 'inline-block' : 'none';
+    }
+    if (savedGridSize !== null) {
+      selGridSize.value = savedGridSize;
+    }
+    
+    chkShowGrid.addEventListener('change', function () {
+      localStorage.setItem('showPreviewGrid', this.checked);
+      selGridSize.style.display = this.checked ? 'inline-block' : 'none';
+      updatePreview();
+    });
+    
+    selGridSize.addEventListener('change', function () {
+      localStorage.setItem('previewGridSize', this.value);
+      updatePreview();
+    });
+  }
+
   fetchResolutions(function () {
     fetchFonts(function () {
       fetchInitialState(function () {
@@ -1730,6 +1756,61 @@ function updatePreview() {
   
   pvCtx.fillStyle = '#111';
   pvCtx.fillRect(0, 0, 1920, 1080);
+
+  // Draw grid if checked
+  var chkShowGrid = $id('chkShowGrid');
+  if (chkShowGrid && chkShowGrid.checked) {
+    var selGridSize = $id('selGridSize');
+    var gridSize = parseInt(selGridSize ? selGridSize.value : '50', 10);
+    
+    pvCtx.save();
+    pvCtx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    pvCtx.lineWidth = 1;
+    
+    // Vertical lines from center (960) outward
+    for (var x = 960; x < 1920; x += gridSize) {
+      pvCtx.beginPath();
+      pvCtx.moveTo(x, 0);
+      pvCtx.lineTo(x, 1080);
+      pvCtx.stroke();
+    }
+    for (var x = 960 - gridSize; x >= 0; x -= gridSize) {
+      pvCtx.beginPath();
+      pvCtx.moveTo(x, 0);
+      pvCtx.lineTo(x, 1080);
+      pvCtx.stroke();
+    }
+    
+    // Horizontal lines from center (540) outward
+    for (var y = 540; y < 1080; y += gridSize) {
+      pvCtx.beginPath();
+      pvCtx.moveTo(0, y);
+      pvCtx.lineTo(1920, y);
+      pvCtx.stroke();
+    }
+    for (var y = 540 - gridSize; y >= 0; y -= gridSize) {
+      pvCtx.beginPath();
+      pvCtx.moveTo(0, y);
+      pvCtx.lineTo(1920, y);
+      pvCtx.stroke();
+    }
+    
+    // Draw central axes slightly more prominent
+    pvCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    pvCtx.lineWidth = 1.5;
+    
+    pvCtx.beginPath();
+    pvCtx.moveTo(960, 0);
+    pvCtx.lineTo(960, 1080);
+    pvCtx.stroke();
+    
+    pvCtx.beginPath();
+    pvCtx.moveTo(0, 540);
+    pvCtx.lineTo(1920, 540);
+    pvCtx.stroke();
+    
+    pvCtx.restore();
+  }
   
   var scale = 130.37;
   

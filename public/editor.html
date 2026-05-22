@@ -47,7 +47,20 @@
   <div class="resizer" id="resizer2"></div>
 
   <div class="preview-panel">
-    <div class="preview-title">Live Preview</div>
+    <div class="preview-title">
+      <span>Live Preview</span>
+      <div class="grid-controls">
+        <label>
+          <input type="checkbox" id="chkShowGrid">
+          Grid
+        </label>
+        <select id="selGridSize" style="display: none;">
+          <option value="10">10x10</option>
+          <option value="50" selected>50x50</option>
+          <option value="100">100x100</option>
+        </select>
+      </div>
+    </div>
     <div class="preview-container">
       <canvas id="previewCanvas"></canvas>
     </div>

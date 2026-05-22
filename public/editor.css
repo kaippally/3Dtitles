@@ -118,6 +118,48 @@ header {
   text-transform: uppercase;
   letter-spacing: .08em;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.grid-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: none;
+  font-size: 12px;
+  font-weight: normal;
+  letter-spacing: normal;
+}
+
+.grid-controls label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--muted);
+  user-select: none;
+}
+
+.grid-controls label:hover {
+  color: var(--text);
+}
+
+.grid-controls select {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.grid-controls select:focus, .grid-controls select:hover {
+  border-color: var(--accent);
 }
 
 .preview-container {
