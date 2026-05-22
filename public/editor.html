@@ -91,6 +91,22 @@
   </div>
 </div>
 
+<!-- Select Image modal -->
+<div class="overlay hidden" id="imageModal">
+  <div class="modal" style="max-width: 500px;">
+    <h3>Select Image File (PNG)</h3>
+    <div style="margin-bottom: 12px; display: flex; gap: 8px;">
+      <button class="hbtn primary" id="btnUploadImage">Upload Image</button>
+      <input type="file" id="imageFileInput" accept="image/png" style="display: none;" />
+    </div>
+    <ul class="mlist" id="imageList" style="max-height: 250px;"></ul>
+    <div class="mbtns">
+      <button class="hbtn danger" id="btnClearImage">Clear Image</button>
+      <button class="hbtn" id="btnCloseImage">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Three.js served locally — no internet required -->
 <script src="/vendor/three.min.js"></script>
 <script src="/vendor/FontLoader.js"></script>

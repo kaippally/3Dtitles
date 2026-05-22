@@ -89,6 +89,7 @@ function wireButtons() {
         gPreviewAudioObj = null;
       }
       closeModal('audioModal');
+      closeModal('imageModal');
     }
     if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); fileSave(); }
   });
@@ -168,6 +169,58 @@ function wireButtons() {
     reader.readAsDataURL(file);
     this.value = '';
   });
+
+  // Image picker modal buttons wiring
+  $id('btnCloseImage').addEventListener('click', function () {
+    closeModal('imageModal');
+  });
+
+  $id('btnClearImage').addEventListener('click', clearImageSelection);
+
+  $id('btnUploadImage').addEventListener('click', function () {
+    $id('imageFileInput').click();
+  });
+
+  $id('imageFileInput').addEventListener('change', function () {
+    var file = this.files[0];
+    if (!file) return;
+    
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var base64Data = e.target.result;
+      
+      var btn = $id('btnUploadImage');
+      var originalText = btn.textContent;
+      btn.textContent = 'Uploading...';
+      btn.disabled = true;
+      
+      fetch('/api/image/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: file.name,
+          data: base64Data
+        })
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        btn.textContent = originalText;
+        btn.disabled = false;
+        if (res.ok) {
+          openImageModal(gActiveImageTrackId);
+        } else {
+          alert('Upload failed: ' + (res.error || 'unknown error'));
+        }
+      })
+      .catch(function (err) {
+        btn.textContent = originalText;
+        btn.disabled = false;
+        alert('Upload error: ' + err.message);
+      });
+    };
+    reader.readAsDataURL(file);
+    this.value = '';
+  });
 }
 
 /* ── Data ──────────────────────────────────────────────────────────────────── */
@@ -223,6 +276,8 @@ function fetchState(cb) {
         if (gState.tracks) {
           gState.tracks.forEach(function (t) {
             updateTrackOutputText(t);
+            if (t.type === undefined) t.type = (t.id === 4 ? 'image' : 'text');
+            if (t.image === undefined) t.image = '';
             if (t.xPos === undefined) t.xPos = 0.0;
             if (t.zPos === undefined) t.zPos = 0.0;
             if (!t.align) t.align = 'center';
@@ -251,17 +306,146 @@ function buildTrack(t) {
   wrap.className = 'track' + (t.enabled ? ' active' : '');
   wrap.id = 'track-' + t.id;
 
-  /* ── Font options ── */
-  var fOpts = gFonts.map(function (f) {
-    return '<option value="' + esc(f.id) + '"' + (t.font === f.id ? ' selected' : '') + '>' + esc(f.label) + '</option>';
-  }).join('');
-
-  /* ── Animation options ── */
   var aOpts = PRESETS.map(function (p) {
     return '<option value="' + p.id + '"' + (t.animation === p.id ? ' selected' : '') + '>' + p.label + '</option>';
   }).join('');
 
   var animLabel = (PRESETS.find(function (p) { return p.id === t.animation; }) || { label: t.animation }).label;
+
+  if (t.type === 'image') {
+    wrap.innerHTML =
+      '<div class="track-header" id="th-' + t.id + '">' +
+      '<span class="track-num">T' + t.id + '</span>' +
+      '<span class="track-label" id="tLabel-' + t.id + '">' + esc(t.image ? t.image.split('/').pop() : '(no image)') + '</span>' +
+      '<span class="anim-badge"  id="tBadge-' + t.id + '">' + animLabel + '</span>' +
+      '<button class="tog' + (t.enabled ? ' on' : '') + '" id="tTog-' + t.id + '"></button>' +
+      '</div>' +
+      '<div class="track-body" id="tbody-' + t.id + '">' +
+      '<div class="row">' +
+      '<label>Image</label>' +
+      '<input type="text" id="timg-' + t.id + '" value="' + esc(t.image || '') + '" placeholder="Click to select PNG..." style="width:100%; cursor:pointer" readonly>' +
+      '</div>' +
+      '<div class="row">' +
+      '<label>Anim</label>' +
+      '<select id="ta-' + t.id + '">' + aOpts + '</select>' +
+      '</div>' +
+      '<div class="row2">' +
+      '<div class="row"><label>Size</label>' +
+      '<input type="range" id="ts-' + t.id + '" min="0.1" max="10" step="0.05" value="' + t.size + '">' +
+      '<span class="val" id="vs-' + t.id + '">' + t.size + '</span>' +
+      '</div>' +
+      '</div>' +
+      '<div class="row2">' +
+      '<div class="row"><label>X Pos</label>' +
+      '<input type="range" id="tx-' + t.id + '" min="-20" max="20" step="0.1" value="' + (t.xPos !== undefined ? t.xPos : 0.0) + '">' +
+      '<span class="val" id="vx-' + t.id + '">' + (t.xPos !== undefined ? t.xPos : 0.0) + '</span>' +
+      '</div>' +
+      '<div class="row"><label>Y Pos</label>' +
+      '<input type="range" id="ty-' + t.id + '" min="-10" max="10" step="0.1" value="' + t.yPos + '">' +
+      '<span class="val" id="vy-' + t.id + '">' + t.yPos + '</span>' +
+      '</div>' +
+      '</div>' +
+      '<div class="row2">' +
+      '<div class="row"><label>Z Pos</label>' +
+      '<input type="range" id="tz-' + t.id + '" min="-10" max="10" step="0.1" value="' + (t.zPos !== undefined ? t.zPos : 0.0) + '">' +
+      '<span class="val" id="vz-' + t.id + '">' + (t.zPos !== undefined ? t.zPos : 0.0) + '</span>' +
+      '</div>' +
+      '</div>' +
+      '<div class="row2">' +
+      '<div class="row"><label style="min-width:55px">Audio In</label>' +
+      '<input type="text" id="tai-' + t.id + '" value="' + esc(t.audioStart || '') + '" placeholder="Click to select Audio In..." style="width:100%; cursor:pointer" readonly>' +
+      '</div>' +
+      '<div class="row"><label style="min-width:55px">Audio Out</label>' +
+      '<input type="text" id="tao-' + t.id + '" value="' + esc(t.audioEnd || '') + '" placeholder="Click to select Audio Out..." style="width:100%; cursor:pointer" readonly>' +
+      '</div>' +
+      '</div>' +
+      '<div class="row">' +
+      '<label>Delay</label>' +
+      '<input type="number" id="tdy-' + t.id + '" value="' + t.delay + '" min="0" step="100"> ms' +
+      '<label style="min-width:auto;margin-left:10px">Hold</label>' +
+      '<input type="number" id="tdr-' + t.id + '" value="' + t.duration + '" min="0" step="500"> ms' +
+      '<span style="color:var(--muted);font-size:11px;margin-left:4px">(0=forever)</span>' +
+      '</div>' +
+      '</div>';
+
+    var tog = wrap.querySelector('#tTog-' + t.id);
+    var header = wrap.querySelector('#th-' + t.id);
+    var body = wrap.querySelector('#tbody-' + t.id);
+
+    header.addEventListener('click', function (e) {
+      if (e.target === tog) return;
+      body.style.display = body.style.display === 'none' ? '' : 'none';
+    });
+
+    tog.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var track = findTrack(t.id);
+      track.enabled = !track.enabled;
+      tog.classList.toggle('on', track.enabled);
+      wrap.classList.toggle('active', track.enabled);
+      schedulePush();
+    });
+
+    wrap.querySelector('#timg-' + t.id).addEventListener('click', function () {
+      openImageModal(t.id);
+    });
+
+    wrap.querySelector('#ta-' + t.id).addEventListener('change', function () {
+      findTrack(t.id).animation = this.value;
+      var lbl = (PRESETS.find(function (p) { return p.id === this.value; }.bind(this)) || { label: this.value }).label;
+      wrap.querySelector('#tBadge-' + t.id).textContent = lbl;
+      schedulePush();
+    });
+
+    wrap.querySelector('#ts-' + t.id).addEventListener('input', function () {
+      findTrack(t.id).size = parseFloat(this.value);
+      wrap.querySelector('#vs-' + t.id).textContent = this.value;
+      schedulePush();
+    });
+
+    wrap.querySelector('#tx-' + t.id).addEventListener('input', function () {
+      findTrack(t.id).xPos = parseFloat(this.value);
+      wrap.querySelector('#vx-' + t.id).textContent = this.value;
+      schedulePush();
+    });
+
+    wrap.querySelector('#ty-' + t.id).addEventListener('input', function () {
+      findTrack(t.id).yPos = parseFloat(this.value);
+      wrap.querySelector('#vy-' + t.id).textContent = this.value;
+      schedulePush();
+    });
+
+    wrap.querySelector('#tz-' + t.id).addEventListener('input', function () {
+      findTrack(t.id).zPos = parseFloat(this.value);
+      wrap.querySelector('#vz-' + t.id).textContent = this.value;
+      schedulePush();
+    });
+
+    wrap.querySelector('#tdy-' + t.id).addEventListener('input', function () {
+      findTrack(t.id).delay = parseFloat(this.value) || 0;
+      schedulePush();
+    });
+
+    wrap.querySelector('#tdr-' + t.id).addEventListener('input', function () {
+      findTrack(t.id).duration = parseFloat(this.value) || 0;
+      schedulePush();
+    });
+
+    wrap.querySelector('#tai-' + t.id).addEventListener('click', function () {
+      openAudioModal(t.id, 'audioStart');
+    });
+
+    wrap.querySelector('#tao-' + t.id).addEventListener('click', function () {
+      openAudioModal(t.id, 'audioEnd');
+    });
+
+    return wrap;
+  }
+
+  /* ── Font options ── */
+  var fOpts = gFonts.map(function (f) {
+    return '<option value="' + esc(f.id) + '"' + (t.font === f.id ? ' selected' : '') + '>' + esc(f.label) + '</option>';
+  }).join('');
 
   /* ── Build HTML ──
      All attributes use double quotes — no escaping of single quotes needed.  */
@@ -348,18 +532,16 @@ function buildTrack(t) {
     '</div>' +
     '</div>';
 
-  /* ── Wire events via querySelector — elements are inside wrap, not in document yet ── */
+  /* ── Wire events via querySelector ── */
   var tog = wrap.querySelector('#tTog-' + t.id);
   var header = wrap.querySelector('#th-' + t.id);
   var body = wrap.querySelector('#tbody-' + t.id);
 
-  // Collapse / expand body on header click
   header.addEventListener('click', function (e) {
     if (e.target === tog) return;
     body.style.display = body.style.display === 'none' ? '' : 'none';
   });
 
-  // Enable toggle
   tog.addEventListener('click', function (e) {
     e.stopPropagation();
     var track = findTrack(t.id);
@@ -369,7 +551,6 @@ function buildTrack(t) {
     schedulePush();
   });
 
-  // Text input
   wrap.querySelector('#ti-' + t.id).addEventListener('input', function () {
     var track = findTrack(t.id);
     track.text = this.value;
@@ -378,7 +559,6 @@ function buildTrack(t) {
     schedulePush();
   });
 
-  // Font select
   wrap.querySelector('#tf-' + t.id).addEventListener('change', function () {
     var track = findTrack(t.id);
     track.font = this.value;
@@ -386,7 +566,6 @@ function buildTrack(t) {
     schedulePush();
   });
 
-  // Animation select
   wrap.querySelector('#ta-' + t.id).addEventListener('change', function () {
     findTrack(t.id).animation = this.value;
     var lbl = (PRESETS.find(function (p) { return p.id === this.value; }.bind(this)) || { label: this.value }).label;
@@ -394,48 +573,41 @@ function buildTrack(t) {
     schedulePush();
   });
 
-  // Color picker
   wrap.querySelector('#tc-' + t.id).addEventListener('input', function () {
     findTrack(t.id).color = this.value;
     schedulePush();
   });
 
-  // Size slider
   wrap.querySelector('#ts-' + t.id).addEventListener('input', function () {
     findTrack(t.id).size = parseFloat(this.value);
     wrap.querySelector('#vs-' + t.id).textContent = this.value;
     schedulePush();
   });
 
-  // Depth slider
   wrap.querySelector('#td-' + t.id).addEventListener('input', function () {
     findTrack(t.id).depth = parseFloat(this.value);
     wrap.querySelector('#vd-' + t.id).textContent = this.value;
     schedulePush();
   });
 
-  // X-Pos slider
   wrap.querySelector('#tx-' + t.id).addEventListener('input', function () {
     findTrack(t.id).xPos = parseFloat(this.value);
     wrap.querySelector('#vx-' + t.id).textContent = this.value;
     schedulePush();
   });
 
-  // Y-Pos slider
   wrap.querySelector('#ty-' + t.id).addEventListener('input', function () {
     findTrack(t.id).yPos = parseFloat(this.value);
     wrap.querySelector('#vy-' + t.id).textContent = this.value;
     schedulePush();
   });
 
-  // Z-Pos slider
   wrap.querySelector('#tz-' + t.id).addEventListener('input', function () {
     findTrack(t.id).zPos = parseFloat(this.value);
     wrap.querySelector('#vz-' + t.id).textContent = this.value;
     schedulePush();
   });
 
-  // Align group
   var alignButtons = wrap.querySelectorAll('#tag-' + t.id + ' .abtn');
   alignButtons.forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -448,30 +620,25 @@ function buildTrack(t) {
     });
   });
 
-  // Bevel checkbox
   wrap.querySelector('#tb-' + t.id).addEventListener('change', function () {
     findTrack(t.id).bevel = this.checked;
     schedulePush();
   });
 
-  // Delay number
   wrap.querySelector('#tdy-' + t.id).addEventListener('input', function () {
     findTrack(t.id).delay = parseFloat(this.value) || 0;
     schedulePush();
   });
 
-  // Duration number
   wrap.querySelector('#tdr-' + t.id).addEventListener('input', function () {
     findTrack(t.id).duration = parseFloat(this.value) || 0;
     schedulePush();
   });
 
-  // Audio In input
   wrap.querySelector('#tai-' + t.id).addEventListener('click', function () {
     openAudioModal(t.id, 'audioStart');
   });
 
-  // Audio Out input
   wrap.querySelector('#tao-' + t.id).addEventListener('click', function () {
     openAudioModal(t.id, 'audioEnd');
   });
@@ -510,6 +677,8 @@ function loadScene(name) {
         if (gState.tracks) {
           gState.tracks.forEach(function (t) {
             updateTrackOutputText(t);
+            if (t.type === undefined) t.type = (t.id === 4 ? 'image' : 'text');
+            if (t.image === undefined) t.image = '';
             if (t.xPos === undefined) t.xPos = 0.0;
             if (t.zPos === undefined) t.zPos = 0.0;
             if (!t.align) t.align = 'center';
@@ -686,9 +855,80 @@ function clearAudioSelection() {
   closeModal('audioModal');
 }
 
+/* ── Image selection modal ────────────────────────────────────────────────── */
+var gActiveImageTrackId = null;
+
+function openImageModal(trackId) {
+  gActiveImageTrackId = trackId;
+  
+  fetch('/api/images')
+    .then(function (r) { return r.json(); })
+    .then(function (files) {
+      var list = $id('imageList');
+      list.innerHTML = '';
+      if (!files.length) {
+        list.innerHTML = '<li style="color:var(--muted);cursor:default;padding:8px 12px;">No PNG images found. Upload one!</li>';
+      } else {
+        files.forEach(function (filename) {
+          var li = document.createElement('li');
+          li.style.display = 'flex';
+          li.style.justifyContent = 'space-between';
+          li.style.alignItems = 'center';
+          li.style.padding = '8px 12px';
+          
+          var nameSpan = document.createElement('span');
+          nameSpan.textContent = filename;
+          nameSpan.style.cursor = 'pointer';
+          nameSpan.style.flex = '1';
+          nameSpan.addEventListener('click', function () {
+            selectImage('/images/' + filename);
+          });
+          li.appendChild(nameSpan);
+          
+          var imgPreview = document.createElement('img');
+          imgPreview.src = '/images/' + filename;
+          imgPreview.style.height = '24px';
+          imgPreview.style.marginLeft = '10px';
+          imgPreview.style.borderRadius = '2px';
+          imgPreview.style.border = '1px solid var(--border)';
+          li.appendChild(imgPreview);
+          
+          list.appendChild(li);
+        });
+      }
+      $id('imageModal').classList.remove('hidden');
+    });
+}
+
+function selectImage(url) {
+  var track = findTrack(gActiveImageTrackId);
+  if (track) {
+    track.image = url;
+    var input = $id('timg-' + gActiveImageTrackId);
+    if (input) input.value = url;
+    var lbl = $id('tLabel-' + gActiveImageTrackId);
+    if (lbl) lbl.textContent = url.split('/').pop();
+    schedulePush();
+  }
+  closeModal('imageModal');
+}
+
+function clearImageSelection() {
+  var track = findTrack(gActiveImageTrackId);
+  if (track) {
+    track.image = '';
+    var input = $id('timg-' + gActiveImageTrackId);
+    if (input) input.value = '';
+    var lbl = $id('tLabel-' + gActiveImageTrackId);
+    if (lbl) lbl.textContent = '(no image)';
+    schedulePush();
+  }
+  closeModal('imageModal');
+}
+
 /* ── Live preview ──────────────────────────────────────────────────────────── */
 var pvScene, pvCamera, pvRenderer, pvLoader, pvGroup;
-var pvMeshes = [null, null, null];
+var pvMeshes = [null, null, null, null];
 function initPreview() {
   if (typeof THREE === 'undefined') {
     console.warn('Three.js not loaded yet — preview unavailable');
@@ -803,6 +1043,40 @@ function updatePreview() {
   gState.tracks.forEach(function (t, i) {
     if (pvMeshes[i]) { if (pvGroup) pvGroup.remove(pvMeshes[i]); pvMeshes[i] = null; }
     if (!t.enabled) return;
+
+    if (t.type === 'image') {
+      if (!t.image) return;
+      var loader = new THREE.TextureLoader();
+      loader.load(t.image, function (texture) {
+        var currentTrack = findTrack(t.id);
+        if (!currentTrack || !currentTrack.enabled || currentTrack.image !== t.image) return;
+
+        var img = texture.image;
+        var aspect = img ? (img.width / img.height) : 1;
+        var w = t.size * aspect;
+        var h = t.size;
+        var geo = new THREE.PlaneGeometry(w, h);
+
+        var mat = new THREE.MeshBasicMaterial({
+          map: texture,
+          transparent: true,
+          opacity: 1,
+          side: THREE.DoubleSide
+        });
+        
+        var mesh = new THREE.Mesh(geo, mat);
+        mesh.position.x = (t.xPos !== undefined ? t.xPos : 0.0) * 0.5;
+        mesh.position.y = t.yPos * 0.5;
+        mesh.position.z = (t.zPos !== undefined ? t.zPos : 0.0) * 0.5;
+
+        if (pvMeshes[i]) { if (pvGroup) pvGroup.remove(pvMeshes[i]); }
+        if (pvGroup) pvGroup.add(mesh);
+        pvMeshes[i] = mesh;
+      }, undefined, function (err) {
+        console.error('Failed to load preview texture:', t.image, err);
+      });
+      return;
+    }
 
     var col = parseInt(t.color.replace('#', ''), 16);
     var addMesh = function (geo) {

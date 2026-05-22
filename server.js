@@ -22,8 +22,9 @@ const SAVES  = path.join(BASE, 'saves');
 const FONTS  = path.join(BASE, 'fonts');
 const PUBLIC = path.join(BASE, 'public');
 const AUDIO  = path.join(BASE, 'audio');
+const IMAGES = path.join(BASE, 'images');
 
-for (const d of [SAVES, FONTS, AUDIO]) if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+for (const d of [SAVES, FONTS, AUDIO, IMAGES]) if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 
 const app    = express();
 const server = http.createServer(app);
@@ -32,6 +33,7 @@ const WSS    = new wsLib.WebSocketServer({ server });
 app.use(express.json({ limit: '50mb' }));
 app.use('/fonts', express.static(FONTS));
 app.use('/audio', express.static(AUDIO));
+app.use('/images', express.static(IMAGES));
 
 // ── Serve Three.js r128 locally (no internet needed for OBS) ─────────────────
 const THREE_BASE    = path.join(BASE, 'node_modules', 'three');
@@ -61,9 +63,10 @@ app.get('/display', (_, res) => res.sendFile(path.join(PUBLIC, 'display.html')))
 let appState = {
   aspectRatio: '1920x1080',
   tracks: [
-    { id:1, enabled:true,  text:'BREAKING NEWS', outputText:'BREAKING NEWS', font:'helvetiker', color:'#ff4444', animation:'crashLandTop',   size:1.0, depth:0.30, xPos:0.0, yPos: 1.8, zPos:0.0, delay:   0, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
-    { id:2, enabled:false, text:'Price Drop',    outputText:'Price Drop',    font:'helvetiker', color:'#ffcc00', animation:'zipInRight',     size:0.8, depth:0.25, xPos:0.0, yPos: 0.0, zPos:0.0, delay: 800, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
-    { id:3, enabled:false, text:'At WalMarts',   outputText:'At WalMarts',   font:'helvetiker', color:'#44ff44', animation:'zipInSpin',      size:0.7, depth:0.20, xPos:0.0, yPos:-1.8, zPos:0.0, delay:1600, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
+    { id:1, enabled:true,  type:'text', text:'BREAKING NEWS', outputText:'BREAKING NEWS', font:'helvetiker', color:'#ff4444', animation:'crashLandTop',   size:1.0, depth:0.30, xPos:0.0, yPos: 1.8, zPos:0.0, delay:   0, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
+    { id:2, enabled:false, type:'text', text:'Price Drop',    outputText:'Price Drop',    font:'helvetiker', color:'#ffcc00', animation:'zipInRight',     size:0.8, depth:0.25, xPos:0.0, yPos: 0.0, zPos:0.0, delay: 800, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
+    { id:3, enabled:false, type:'text', text:'At WalMarts',   outputText:'At WalMarts',   font:'helvetiker', color:'#44ff44', animation:'zipInSpin',      size:0.7, depth:0.20, xPos:0.0, yPos:-1.8, zPos:0.0, delay:1600, duration:0, bevel:true, align:'center', audioStart: '', audioEnd: '' },
+    { id:4, enabled:false, type:'image', image:'', animation:'static', size:1.0, xPos:0.0, yPos:-1.8, zPos:0.0, delay:0, duration:0, audioStart: '', audioEnd: '' },
   ],
 };
 
@@ -210,6 +213,26 @@ app.post('/api/audio/upload', (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error('Audio upload error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/images', (_, res) => {
+  res.json(fs.readdirSync(IMAGES).filter(f => /\.(png)$/i.test(f)));
+});
+
+app.post('/api/image/upload', (req, res) => {
+  const { name, data } = req.body;
+  if (!name || !data) {
+    return res.status(400).json({ error: 'Missing name or data' });
+  }
+  try {
+    const base64Data = data.split(';base64,').pop();
+    const buffer = Buffer.from(base64Data, 'base64');
+    fs.writeFileSync(path.join(IMAGES, name), buffer);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Image upload error:', e);
     res.status(500).json({ error: e.message });
   }
 });

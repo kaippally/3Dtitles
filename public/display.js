@@ -128,13 +128,40 @@ function connectSocket() {
 
 /* ── Build mesh for one track ─────────────────────────────────────────────── */
 function buildTrackMesh(track, cb) {
+  if (track.type === 'image') {
+    if (!track.image) { cb(null); return; }
+    const loader = new THREE.TextureLoader();
+    loader.load(track.image, texture => {
+      const img = texture.image;
+      const aspect = img ? (img.width / img.height) : 1;
+      const w = track.size * aspect;
+      const h = track.size;
+      const geo = new THREE.PlaneGeometry(w, h);
+      const mat = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      cb(mesh);
+    }, undefined, err => {
+      console.error('[Display] Texture load error', track.image, err);
+      cb(null);
+    });
+    return;
+  }
+
   const text = getRenderingText(track);
   loadFontShared(fontLoader, track.font, font => {
     if (!font) { cb(null); return; }
     try {
       const geo = new THREE.TextGeometry(text, getTextGeometryOptions(track, font));
       alignGeometry(geo, track.align || 'center');
-      cb(geo);
+      const colorVal = parseInt(track.color.replace('#', ''), 16);
+      const mat = new THREE.MeshPhongMaterial({ color: colorVal, transparent: true, opacity: 0 });
+      const mesh = new THREE.Mesh(geo, mat);
+      cb(mesh);
     } catch (e) {
       console.error('[Display] TextGeometry error', e);
       cb(null);
@@ -150,15 +177,13 @@ function rebuildScene() {
 
   activeState.tracks.forEach(track => {
     if (!track.enabled) return;
-    buildTrackMesh(track, geo => {
-      if (!geo) return;
+    buildTrackMesh(track, mesh => {
+      if (!mesh) return;
       // Guard: track may have been disabled while fetch was in flight
       const current = activeState.tracks.find(t => t.id === track.id);
       if (!current || !current.enabled) return;
+      if (track.type === 'image' && current.image !== track.image) return;
 
-      const colorVal = parseInt(track.color.replace('#', ''), 16);
-      const mat = new THREE.MeshPhongMaterial({ color: colorVal, transparent: true, opacity: 0 });
-      const mesh = new THREE.Mesh(geo, mat);
       mesh.visible = false;
       mesh.userData = {
         id: track.id,
