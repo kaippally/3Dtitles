@@ -58,6 +58,7 @@ app.use('/vendor/fonts', (req, res, next) => {
 });
 
 app.use(express.static(PUBLIC));
+app.get('/favicon.ico', (_, res) => res.status(204).end());
 app.get('/',        (_, res) => res.sendFile(path.join(PUBLIC, 'editor.html')));
 app.get('/display', (_, res) => res.sendFile(path.join(PUBLIC, 'display.html')));
 
