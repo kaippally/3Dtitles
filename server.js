@@ -26,6 +26,8 @@ const IMAGES = path.join(BASE, 'images');
 
 for (const d of [SAVES, FONTS, AUDIO, IMAGES]) if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 
+const ACTIVE_FILE = path.join(SAVES, 'active.txt');
+
 const app    = express();
 const server = http.createServer(app);
 const WSS    = new wsLib.WebSocketServer({ server });
@@ -69,6 +71,28 @@ let appState = {
     { id:4, enabled:false, type:'image', image:'', animation:'static', size:1.0, xPos:0.0, yPos:-1.8, zPos:0.0, delay:0, duration:0, audioStart: '', audioEnd: '' },
   ],
 };
+
+function loadActiveTemplateOnStartup() {
+  try {
+    if (fs.existsSync(ACTIVE_FILE)) {
+      const activeName = fs.readFileSync(ACTIVE_FILE, 'utf8').trim();
+      if (activeName) {
+        const filePath = path.join(SAVES, activeName + '.json');
+        if (fs.existsSync(filePath)) {
+          const content = fs.readFileSync(filePath, 'utf8');
+          appState = JSON.parse(content);
+          console.log('[startup] Loaded active template:', activeName);
+          return activeName;
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[startup] Error loading active template:', e.message);
+  }
+  return null;
+}
+
+let activeTemplateName = loadActiveTemplateOnStartup();
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 function broadcast(obj) {
@@ -187,7 +211,8 @@ function fontToTypeface(font) {
 app.get('/api/state',  (_, res) => res.json(appState));
 app.post('/api/state', (req, res) => {
   appState = req.body;
-  broadcast({ type: 'state', state: appState, autoPlay: true });
+  const autoPlay = req.query.autoPlay !== 'false';
+  broadcast({ type: 'state', state: appState, autoPlay: autoPlay });
   res.json({ ok: true });
 });
 
@@ -240,10 +265,26 @@ app.post('/api/image/upload', (req, res) => {
 app.get('/api/saves', (_, res) =>
   res.json(fs.readdirSync(SAVES).filter(f => f.endsWith('.json')).map(f => f.slice(0, -5))));
 
-app.get('/api/saves/:n', (req, res) => {
-  const p = path.join(SAVES, req.params.n + '.json');
-  fs.existsSync(p) ? res.json(JSON.parse(fs.readFileSync(p, 'utf8'))) : res.status(404).json({ error: 'Not found' });
+app.get('/api/active-template', (_, res) => {
+  res.json({ activeTemplate: activeTemplateName || null });
 });
+
+app.get('/api/saves/:n', (req, res) => {
+  const name = req.params.n;
+  const p = path.join(SAVES, name + '.json');
+  if (fs.existsSync(p)) {
+    try {
+      activeTemplateName = name;
+      fs.writeFileSync(ACTIVE_FILE, name, 'utf8');
+    } catch (e) {
+      console.error('Error writing active template:', e);
+    }
+    res.json(JSON.parse(fs.readFileSync(p, 'utf8')));
+  } else {
+    res.status(404).json({ error: 'Not found' });
+  }
+});
+
 app.post('/api/saves/:n', (req, res) => {
   try {
     const name = req.params.n;
@@ -253,15 +294,32 @@ app.post('/api/saves/:n', (req, res) => {
     const safeName = path.basename(name);
     const filePath = path.join(SAVES, safeName + '.json');
     fs.writeFileSync(filePath, JSON.stringify(req.body, null, 2));
+
+    // Update active template
+    activeTemplateName = safeName;
+    fs.writeFileSync(ACTIVE_FILE, safeName, 'utf8');
+
     res.json({ ok: true });
   } catch (e) {
     console.error('Error saving template:', e);
     res.status(500).json({ error: e.message });
   }
 });
+
 app.delete('/api/saves/:n', (req, res) => {
-  const p = path.join(SAVES, req.params.n + '.json');
+  const name = req.params.n;
+  const p = path.join(SAVES, name + '.json');
   if (fs.existsSync(p)) fs.unlinkSync(p);
+
+  // If deleted template was the active one, clear active template
+  if (activeTemplateName === name) {
+    activeTemplateName = null;
+    try {
+      if (fs.existsSync(ACTIVE_FILE)) fs.unlinkSync(ACTIVE_FILE);
+    } catch (e) {
+      console.error('Error deleting active template file:', e);
+    }
+  }
   res.json({ ok: true });
 });
 

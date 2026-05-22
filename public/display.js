@@ -19,6 +19,48 @@ let fontLoader;
 let activeState = null;
 let trackMeshes = {};
 
+/* ── Loading Synchronization State ────────────────────────────────────────── */
+let isSceneReady = false;
+let pendingTrigger = false;
+let isPageLoaded = (document.readyState === 'complete');
+
+window.addEventListener('load', () => {
+  console.log('[Display] DOM load complete');
+  isPageLoaded = true;
+  checkReadyAndPlay();
+});
+
+function checkReadyAndPlay() {
+  if (isPageLoaded && isSceneReady && pendingTrigger) {
+    pendingTrigger = false;
+    runAnimation();
+  }
+}
+
+function preloadAudio(url) {
+  return new Promise((resolve) => {
+    if (!url) {
+      resolve();
+      return;
+    }
+    const audio = new Audio(url);
+    audio.preload = 'auto';
+    
+    let resolved = false;
+    const done = () => {
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
+    };
+    
+    audio.addEventListener('canplaythrough', done);
+    audio.addEventListener('error', done);
+    // Timeout fallback after 2 seconds
+    setTimeout(done, 2000);
+  });
+}
+
 /* ── Animation state ──────────────────────────────────────────────────────── */
 let animationStartTime = 0;
 let isAnimating = false;
@@ -128,6 +170,11 @@ function connectSocket() {
       const data = JSON.parse(ev.data);
       switch (data.type) {
         case 'init':
+          activeState = data.state;
+          rebuildScene();
+          resizeDisplay();
+          triggerAnimation();
+          break;
         case 'state':
           activeState = data.state;
           rebuildScene();
@@ -224,39 +271,86 @@ function buildTrackMesh(track, cb) {
 }
 
 /* ── Rebuild scene meshes ─────────────────────────────────────────────────── */
+let rebuildCounter = 0;
+
+/* ── Rebuild scene meshes ─────────────────────────────────────────────────── */
 function rebuildScene() {
   if (!activeState || !activeState.tracks) return;
+
+  rebuildCounter++;
+  const currentRebuildId = rebuildCounter;
+
+  isSceneReady = false;
+
+  // Clean up existing meshes
   Object.values(trackMeshes).forEach(m => m && scene.remove(m));
   trackMeshes = {};
 
-  activeState.tracks.forEach(track => {
-    if (!track.enabled) return;
-    buildTrackMesh(track, mesh => {
-      if (!mesh) return;
-      // Guard: track may have been disabled while fetch was in flight
-      const current = activeState.tracks.find(t => t.id === track.id);
-      if (!current || !current.enabled) return;
-      if (track.type === 'image' && current.image !== track.image) return;
+  // Filter enabled tracks
+  const enabledTracks = activeState.tracks.filter(t => t.enabled);
+  if (enabledTracks.length === 0) {
+    isSceneReady = true;
+    checkReadyAndPlay();
+    return;
+  }
 
-      mesh.visible = false;
-      mesh.userData = {
-        id: track.id,
-        baseX: (track.xPos !== undefined ? track.xPos : 0.0) * 0.5,
-        baseY: track.yPos * 0.5,
-        baseZ: (track.zPos !== undefined ? track.zPos : 0.0) * 0.5,
-        delay: track.delay || 0,
-        duration: track.duration || 0,
-        animation: track.animation || 'static',
-      };
-      scene.add(mesh);
-      trackMeshes[track.id] = mesh;
+  let loadedCount = 0;
+  const tempMeshes = {};
+  const audioPromises = [];
+
+  enabledTracks.forEach(track => {
+    // Preload audio
+    if (track.audioStart) audioPromises.push(preloadAudio(track.audioStart));
+    if (track.audioEnd) audioPromises.push(preloadAudio(track.audioEnd));
+
+    buildTrackMesh(track, mesh => {
+      // Guard against race conditions
+      if (currentRebuildId !== rebuildCounter) return;
+
+      if (mesh) {
+        mesh.visible = false;
+        mesh.userData = {
+          id: track.id,
+          baseX: (track.xPos !== undefined ? track.xPos : 0.0) * 0.5,
+          baseY: track.yPos * 0.5,
+          baseZ: (track.zPos !== undefined ? track.zPos : 0.0) * 0.5,
+          delay: track.delay || 0,
+          duration: track.duration || 0,
+          animation: track.animation || 'static',
+        };
+        tempMeshes[track.id] = mesh;
+      }
+
+      loadedCount++;
+      if (loadedCount === enabledTracks.length) {
+        // Wait for audios to preload as well
+        Promise.all(audioPromises).then(() => {
+          if (currentRebuildId !== rebuildCounter) return;
+
+          // Add meshes to the scene
+          Object.entries(tempMeshes).forEach(([id, m]) => {
+            scene.add(m);
+            trackMeshes[id] = m;
+          });
+
+          isSceneReady = true;
+          console.log('[Display] All assets fully loaded. Scene is ready.');
+          checkReadyAndPlay();
+        });
+      }
     });
   });
 }
 
 /* ── Timeline controls ────────────────────────────────────────────────────── */
 function triggerAnimation() {
-  console.log('[Timeline] Triggering');
+  console.log('[Timeline] Trigger request received');
+  pendingTrigger = true;
+  checkReadyAndPlay();
+}
+
+function runAnimation() {
+  console.log('[Timeline] Running animation');
   stopAllAudio();
   animationStartTime = performance.now();
   isAnimating = true;
@@ -277,7 +371,7 @@ function triggerAnimation() {
       activeTimeouts.push(tIn);
     }
 
-    // Track Audio Out (played when the animation in ends and has fully appeared)
+    // Track Audio Out
     if (track.audioEnd) {
       const delay = (track.delay || 0) + ANIM_IN_DURATION;
       const tOut = setTimeout(() => {
@@ -289,9 +383,11 @@ function triggerAnimation() {
     }
   });
 }
+
 function resetTimeline() {
   console.log('[Timeline] Reset');
   isAnimating = false;
+  pendingTrigger = false; // Clear any pending trigger
   stopAllAudio();
   Object.values(trackMeshes).forEach(mesh => {
     if (!mesh) return;

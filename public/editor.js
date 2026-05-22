@@ -74,12 +74,24 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  var autoTriggerEl = $id('chkAutoTrigger');
+  if (autoTriggerEl) {
+    var savedAutoTrigger = localStorage.getItem('autoTriggerEdits');
+    if (savedAutoTrigger !== null) {
+      autoTriggerEl.checked = (savedAutoTrigger === 'true');
+    }
+    autoTriggerEl.addEventListener('change', function () {
+      localStorage.setItem('autoTriggerEdits', this.checked);
+    });
+  }
+
   fetchResolutions(function () {
     fetchFonts(function () {
-      fetchState(function () {
+      fetchInitialState(function () {
         updateGlobalUI();
         renderTracks();
         initPreview();
+        refreshTemplates();
       });
     });
   });
@@ -365,6 +377,36 @@ function fetchState(cb) {
       if (cb) cb();
     })
     .catch(function (e) { console.error('fetchState:', e); if (cb) cb(); });
+}
+
+function fetchInitialState(cb) {
+  fetch('/api/active-template')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d && d.activeTemplate) {
+        var name = d.activeTemplate;
+        fetch('/api/saves/' + encodeURIComponent(name))
+          .then(function (r) {
+            if (!r.ok) throw new Error('Failed to load active template');
+            return r.json();
+          })
+          .then(function (data) {
+            gState = normalizeState(data);
+            setFilename(name);
+            if (cb) cb();
+          })
+          .catch(function (err) {
+            console.warn('Failed to load active template JSON, falling back:', err);
+            fetchState(cb);
+          });
+      } else {
+        fetchState(cb);
+      }
+    })
+    .catch(function (err) {
+      console.warn('Error fetching active template name, falling back:', err);
+      fetchState(cb);
+    });
 }
 
 /* ── Track rendering ───────────────────────────────────────────────────────── */
@@ -787,7 +829,9 @@ function schedulePush() {
 
 function pushState() {
   if (!gState) return;
-  fetch('/api/state', {
+  var autoTriggerEl = $id('chkAutoTrigger');
+  var autoTrigger = autoTriggerEl ? autoTriggerEl.checked : true;
+  fetch('/api/state?autoPlay=' + autoTrigger, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(gState),

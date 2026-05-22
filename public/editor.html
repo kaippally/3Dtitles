@@ -14,6 +14,9 @@
   <button class="hbtn" id="btnSave">Save</button>
   <button class="hbtn" id="btnSaveAs">Save As&hellip;</button>
   <button class="hbtn" id="btnFonts">&#8635; Fonts</button>
+  <button class="hbtn primary" id="btnTrigger">&#9654; Trigger</button>
+  <button class="hbtn danger"  id="btnReset">&#9632; Reset</button>
+  <button class="hbtn"         id="btnResetView">Reset View</button>
   <a class="hbtn" href="/display" target="_blank">&#9099; Display</a>
 </header>
 
@@ -46,16 +49,14 @@
     <div class="preview-container">
       <canvas id="previewCanvas"></canvas>
     </div>
-    <div class="preview-controls">
-      <button class="hbtn primary" id="btnTrigger">&#9654; Trigger</button>
-      <button class="hbtn danger"  id="btnReset">&#9632; Reset</button>
-      <button class="hbtn"         id="btnResetView">Reset View</button>
-    </div>
   </div>
 </div>
 
 <footer>
-  <span class="hint">Changes auto-apply to display</span>
+  <span class="hint" style="display: flex; align-items: center; gap: 6px;">
+    <input type="checkbox" id="chkAutoTrigger" checked style="cursor: pointer; accent-color: var(--accent);">
+    <label for="chkAutoTrigger" style="cursor: pointer; user-select: none;">Auto-trigger overlay on edit</label>
+  </span>
   <div class="spacer"></div>
   <button class="hbtn primary" id="btnTrigger2">&#9654; Trigger All</button>
   <button class="hbtn danger"  id="btnReset2">&#9632; Reset</button>
