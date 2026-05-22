@@ -21,8 +21,9 @@ const BASE   = __dirname;
 const SAVES  = path.join(BASE, 'saves');
 const FONTS  = path.join(BASE, 'fonts');
 const PUBLIC = path.join(BASE, 'public');
+const AUDIO  = path.join(BASE, 'audio');
 
-for (const d of [SAVES, FONTS]) if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+for (const d of [SAVES, FONTS, AUDIO]) if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 
 const app    = express();
 const server = http.createServer(app);
@@ -30,6 +31,7 @@ const WSS    = new wsLib.WebSocketServer({ server });
 
 app.use(express.json({ limit: '50mb' }));
 app.use('/fonts', express.static(FONTS));
+app.use('/audio', express.static(AUDIO));
 
 // ── Serve Three.js r128 locally (no internet needed for OBS) ─────────────────
 const THREE_BASE    = path.join(BASE, 'node_modules', 'three');
@@ -191,6 +193,26 @@ app.post('/api/reset',   (_, res) => { broadcast({ type: 'reset'   }); res.json(
 
 app.get('/api/fonts',      async (_, res) => { await convertFonts(); res.json(getFonts()); });
 app.get('/api/scan-fonts', async (_, res) => { await convertFonts(); res.json(getFonts()); });
+
+app.get('/api/audio', (_, res) => {
+  res.json(fs.readdirSync(AUDIO).filter(f => /\.(mp3|wav|ogg|aac|m4a)$/i.test(f)));
+});
+
+app.post('/api/audio/upload', (req, res) => {
+  const { name, data } = req.body;
+  if (!name || !data) {
+    return res.status(400).json({ error: 'Missing name or data' });
+  }
+  try {
+    const base64Data = data.split(';base64,').pop();
+    const buffer = Buffer.from(base64Data, 'base64');
+    fs.writeFileSync(path.join(AUDIO, name), buffer);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Audio upload error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 app.get('/api/saves', (_, res) =>
   res.json(fs.readdirSync(SAVES).filter(f => f.endsWith('.json')).map(f => f.slice(0, -5))));

@@ -126,9 +126,9 @@ function alignGeometry(geo, align) {
 
   var xOffset = 0;
   if (align === 'left') {
-    xOffset = -min.x;
-  } else if (align === 'right') {
     xOffset = -max.x;
+  } else if (align === 'right') {
+    xOffset = -min.x;
   } else { // 'center'
     xOffset = -(min.x + width / 2);
   }

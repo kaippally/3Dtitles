@@ -75,6 +75,22 @@
   </div>
 </div>
 
+<!-- Select Audio modal -->
+<div class="overlay hidden" id="audioModal">
+  <div class="modal" style="max-width: 500px;">
+    <h3>Select Audio File</h3>
+    <div style="margin-bottom: 12px; display: flex; gap: 8px;">
+      <button class="hbtn primary" id="btnUploadAudio">Upload Audio File</button>
+      <input type="file" id="audioFileInput" accept="audio/*" style="display: none;" />
+    </div>
+    <ul class="mlist" id="audioList" style="max-height: 250px;"></ul>
+    <div class="mbtns">
+      <button class="hbtn danger" id="btnClearAudio">Clear Audio</button>
+      <button class="hbtn" id="btnCloseAudio">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Three.js served locally — no internet required -->
 <script src="/vendor/three.min.js"></script>
 <script src="/vendor/FontLoader.js"></script>

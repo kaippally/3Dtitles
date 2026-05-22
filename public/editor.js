@@ -74,7 +74,15 @@ function wireButtons() {
   });
 
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { closeModal('openModal'); closeModal('saveAsModal'); }
+    if (e.key === 'Escape') {
+      closeModal('openModal');
+      closeModal('saveAsModal');
+      if (gPreviewAudioObj) {
+        gPreviewAudioObj.pause();
+        gPreviewAudioObj = null;
+      }
+      closeModal('audioModal');
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); fileSave(); }
   });
 
@@ -93,6 +101,62 @@ function wireButtons() {
     gSpinPaused = !gSpinPaused;
     this.innerHTML = gSpinPaused ? '&#9654; Resume Spin' : '&#10074;&#10074; Pause Spin';
     this.classList.toggle('active', gSpinPaused);
+  });
+
+  // Audio picker modal buttons wiring
+  $id('btnCloseAudio').addEventListener('click', function () {
+    if (gPreviewAudioObj) {
+      gPreviewAudioObj.pause();
+      gPreviewAudioObj = null;
+    }
+    closeModal('audioModal');
+  });
+
+  $id('btnClearAudio').addEventListener('click', clearAudioSelection);
+
+  $id('btnUploadAudio').addEventListener('click', function () {
+    $id('audioFileInput').click();
+  });
+
+  $id('audioFileInput').addEventListener('change', function () {
+    var file = this.files[0];
+    if (!file) return;
+    
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var base64Data = e.target.result;
+      
+      var btn = $id('btnUploadAudio');
+      var originalText = btn.textContent;
+      btn.textContent = 'Uploading...';
+      btn.disabled = true;
+      
+      fetch('/api/audio/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: file.name,
+          data: base64Data
+        })
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        btn.textContent = originalText;
+        btn.disabled = false;
+        if (res.ok) {
+          openAudioModal(gActiveAudioTrackId, gActiveAudioField);
+        } else {
+          alert('Upload failed: ' + (res.error || 'unknown error'));
+        }
+      })
+      .catch(function (err) {
+        btn.textContent = originalText;
+        btn.disabled = false;
+        alert('Upload error: ' + err.message);
+      });
+    };
+    reader.readAsDataURL(file);
+    this.value = '';
   });
 }
 
@@ -252,10 +316,10 @@ function buildTrack(t) {
     '</div>' +
     '<div class="row2">' +
     '<div class="row"><label style="min-width:55px">Audio In</label>' +
-    '<input type="text" id="tai-' + t.id + '" value="' + esc(t.audioStart || '') + '" placeholder="e.g. /audio/in.mp3" style="width:100%">' +
+    '<input type="text" id="tai-' + t.id + '" value="' + esc(t.audioStart || '') + '" placeholder="Click to select Audio In..." style="width:100%; cursor:pointer" readonly>' +
     '</div>' +
     '<div class="row"><label style="min-width:55px">Audio Out</label>' +
-    '<input type="text" id="tao-' + t.id + '" value="' + esc(t.audioEnd || '') + '" placeholder="e.g. /audio/out.mp3" style="width:100%">' +
+    '<input type="text" id="tao-' + t.id + '" value="' + esc(t.audioEnd || '') + '" placeholder="Click to select Audio Out..." style="width:100%; cursor:pointer" readonly>' +
     '</div>' +
     '</div>' +
     '<div class="row">' +
@@ -379,17 +443,13 @@ function buildTrack(t) {
   });
 
   // Audio In input
-  wrap.querySelector('#tai-' + t.id).addEventListener('input', function () {
-    var track = findTrack(t.id);
-    track.audioStart = this.value;
-    schedulePush();
+  wrap.querySelector('#tai-' + t.id).addEventListener('click', function () {
+    openAudioModal(t.id, 'audioStart');
   });
 
   // Audio Out input
-  wrap.querySelector('#tao-' + t.id).addEventListener('input', function () {
-    var track = findTrack(t.id);
-    track.audioEnd = this.value;
-    schedulePush();
+  wrap.querySelector('#tao-' + t.id).addEventListener('click', function () {
+    openAudioModal(t.id, 'audioEnd');
   });
 
   return wrap;
@@ -506,6 +566,112 @@ function scanFonts() {
 
 function apiTrigger() { fetch('/api/trigger', { method: 'POST' }); }
 function apiReset() { fetch('/api/reset', { method: 'POST' }); }
+
+/* ── Audio selection modal ────────────────────────────────────────────────── */
+var gActiveAudioTrackId = null;
+var gActiveAudioField = null;
+var gPreviewAudioObj = null;
+
+function openAudioModal(trackId, field) {
+  gActiveAudioTrackId = trackId;
+  gActiveAudioField = field;
+  
+  fetch('/api/audio')
+    .then(function (r) { return r.json(); })
+    .then(function (files) {
+      var list = $id('audioList');
+      list.innerHTML = '';
+      if (!files.length) {
+        list.innerHTML = '<li style="color:var(--muted);cursor:default;padding:8px 12px;">No audio files found. Upload one!</li>';
+      } else {
+        files.forEach(function (filename) {
+          var li = document.createElement('li');
+          li.style.display = 'flex';
+          li.style.justifyContent = 'space-between';
+          li.style.alignItems = 'center';
+          li.style.padding = '8px 12px';
+          
+          var nameSpan = document.createElement('span');
+          nameSpan.textContent = filename;
+          nameSpan.style.cursor = 'pointer';
+          nameSpan.style.flex = '1';
+          nameSpan.addEventListener('click', function () {
+            selectAudio('/audio/' + filename);
+          });
+          li.appendChild(nameSpan);
+          
+          var playBtn = document.createElement('button');
+          playBtn.className = 'hbtn';
+          playBtn.style.padding = '2px 8px';
+          playBtn.style.marginLeft = '10px';
+          playBtn.innerHTML = '▶';
+          playBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            togglePreviewAudio('/audio/' + filename, playBtn);
+          });
+          li.appendChild(playBtn);
+          
+          list.appendChild(li);
+        });
+      }
+      $id('audioModal').classList.remove('hidden');
+    });
+}
+
+function togglePreviewAudio(url, btn) {
+  if (gPreviewAudioObj) {
+    gPreviewAudioObj.pause();
+    if (gPreviewAudioObj.src.endsWith(url)) {
+      gPreviewAudioObj = null;
+      btn.innerHTML = '▶';
+      return;
+    }
+  }
+  
+  document.querySelectorAll('#audioList button').forEach(function (b) {
+    b.innerHTML = '▶';
+  });
+  
+  gPreviewAudioObj = new Audio(url);
+  gPreviewAudioObj.play().catch(function(e) { console.warn("Preview play blocked/failed:", e); });
+  btn.innerHTML = '■';
+  gPreviewAudioObj.onended = function () {
+    btn.innerHTML = '▶';
+    gPreviewAudioObj = null;
+  };
+}
+
+function selectAudio(url) {
+  if (gPreviewAudioObj) {
+    gPreviewAudioObj.pause();
+    gPreviewAudioObj = null;
+  }
+  var track = findTrack(gActiveAudioTrackId);
+  if (track) {
+    track[gActiveAudioField] = url;
+    var inputId = gActiveAudioField === 'audioStart' ? 'tai-' + gActiveAudioTrackId : 'tao-' + gActiveAudioTrackId;
+    var input = $id(inputId);
+    if (input) input.value = url;
+    schedulePush();
+  }
+  closeModal('audioModal');
+}
+
+function clearAudioSelection() {
+  if (gPreviewAudioObj) {
+    gPreviewAudioObj.pause();
+    gPreviewAudioObj = null;
+  }
+  var track = findTrack(gActiveAudioTrackId);
+  if (track) {
+    track[gActiveAudioField] = '';
+    var inputId = gActiveAudioField === 'audioStart' ? 'tai-' + gActiveAudioTrackId : 'tao-' + gActiveAudioTrackId;
+    var input = $id(inputId);
+    if (input) input.value = '';
+    schedulePush();
+  }
+  closeModal('audioModal');
+}
 
 /* ── Live preview ──────────────────────────────────────────────────────────── */
 var pvScene, pvCamera, pvRenderer, pvLoader;

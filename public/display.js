@@ -300,9 +300,33 @@ function applyAnimationHold(mesh, animId, elapsed, baseX, baseY) {
   }
 }
 
+let audioUnlocked = false;
+
+function checkAudioAutoplay() {
+  const testAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
+  testAudio.play().then(() => {
+    audioUnlocked = true;
+  }).catch(() => {
+    const el = document.getElementById('audioUnlock');
+    if (el) el.style.display = 'block';
+  });
+
+  const btn = document.getElementById('audioUnlock');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      const dummy = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
+      dummy.play().then(() => {
+        audioUnlocked = true;
+        btn.style.display = 'none';
+      }).catch(e => console.warn('Failed to unlock audio:', e));
+    });
+  }
+}
+
 /* ── Entry point ──────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   initThree();
   connectSocket();
+  checkAudioAutoplay();
 });
 
