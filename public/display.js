@@ -383,9 +383,9 @@ function runAnimation() {
       activeTimeouts.push(tIn);
     }
 
-    // Track Audio Out (played when the animation ends)
+    // Track Audio Out (played when the fade-out animation begins)
     if (track.audioEnd && track.duration > 0) {
-      const delay = (track.delay || 0) + ANIM_IN_DURATION + track.duration + ANIM_OUT_DURATION;
+      const delay = (track.delay || 0) + ANIM_IN_DURATION + track.duration;
       const tOut = setTimeout(() => {
         const audio = new Audio(track.audioEnd);
         activeAudios.push(audio);

@@ -128,6 +128,20 @@ document.addEventListener('DOMContentLoaded', function () {
   initResizers();
   refreshTemplates();
 
+  var btnAddText = $id('btnAddText');
+  if (btnAddText) {
+    btnAddText.addEventListener('click', function () {
+      addTrack('text');
+    });
+  }
+
+  var btnAddPicture = $id('btnAddPicture');
+  if (btnAddPicture) {
+    btnAddPicture.addEventListener('click', function () {
+      addTrack('image');
+    });
+  }
+
   var searchInput = $id('templatesSearch');
   if (searchInput) {
     searchInput.addEventListener('input', function () {
@@ -397,11 +411,8 @@ function normalizeState(state) {
     { id: 4, enabled: false, type: 'image', image: '', animation: 'static', size: 1.0, xPos: 0.0, yPos: -1.8, zPos: 0.0, delay: 0, duration: 0, audioStart: '', audioEnd: '' }
   ];
 
-  for (var i = 1; i <= 4; i++) {
-    if (!state.tracks.some(function (t) { return t.id === i; })) {
-      var def = defaultTracks.find(function (dt) { return dt.id === i; });
-      if (def) state.tracks.push(Object.assign({}, def));
-    }
+  if (state.tracks.length === 0) {
+    state.tracks = defaultTracks.map(function (dt) { return Object.assign({}, dt); });
   }
 
   // Tracks are now sortable by dragging; do not enforce id sorting
@@ -431,6 +442,125 @@ function normalizeState(state) {
   });
 
   return state;
+}
+
+function getNextTrackId() {
+  var maxId = 0;
+  if (gState && gState.tracks) {
+    gState.tracks.forEach(function (t) {
+      if (t.id > maxId) maxId = t.id;
+    });
+  }
+  return maxId + 1;
+}
+
+function addTrack(type) {
+  if (!gState) return;
+  var textTracks = gState.tracks.filter(function (t) { return t.type === 'text'; });
+  var imageTracks = gState.tracks.filter(function (t) { return t.type === 'image'; });
+  
+  if (type === 'text' && textTracks.length >= 4) {
+    alert('Maximum of 4 text elements allowed.');
+    return;
+  }
+  if (type === 'image' && imageTracks.length >= 4) {
+    alert('Maximum of 4 picture elements allowed.');
+    return;
+  }
+  
+  var nextId = getNextTrackId();
+  var newTrack = null;
+  if (type === 'text') {
+    newTrack = {
+      id: nextId,
+      enabled: true,
+      type: 'text',
+      text: 'New Text',
+      font: 'helvetiker',
+      color: '#ffffff',
+      animation: 'fadeIn',
+      size: 1.0,
+      depth: 0.20,
+      xPos: 0.0,
+      yPos: 0.0,
+      zPos: 0.0,
+      delay: 0,
+      duration: 0,
+      bevel: true,
+      align: 'center',
+      audioStart: '',
+      audioEnd: ''
+    };
+  } else {
+    newTrack = {
+      id: nextId,
+      enabled: true,
+      type: 'image',
+      image: '',
+      animation: 'static',
+      size: 1.0,
+      xPos: 0.0,
+      yPos: 0.0,
+      zPos: 0.0,
+      delay: 0,
+      duration: 0,
+      audioStart: '',
+      audioEnd: ''
+    };
+  }
+  
+  gState.tracks.push(newTrack);
+  selectTrack(nextId);
+  renderTracks();
+  updatePreview();
+  schedulePush();
+}
+
+function deleteTrack(id) {
+  if (!gState) return;
+  var idx = gState.tracks.findIndex(function (t) { return t.id === id; });
+  if (idx !== -1) {
+    gState.tracks.splice(idx, 1);
+    if (gSelectedTrackId === id) {
+      gSelectedTrackId = null;
+    }
+    renderTracks();
+    updatePreview();
+    schedulePush();
+  }
+}
+
+function updateAddButtonsState() {
+  if (!gState) return;
+  var textCount = gState.tracks.filter(function (t) { return t.type === 'text'; }).length;
+  var imageCount = gState.tracks.filter(function (t) { return t.type === 'image'; }).length;
+  
+  var btnText = $id('btnAddText');
+  var btnPic = $id('btnAddPicture');
+  
+  if (btnText) {
+    if (textCount >= 4) {
+      btnText.disabled = true;
+      btnText.classList.add('disabled');
+      btnText.title = 'Limit of 4 Text Elements reached';
+    } else {
+      btnText.disabled = false;
+      btnText.classList.remove('disabled');
+      btnText.title = 'Add Text Element';
+    }
+  }
+  
+  if (btnPic) {
+    if (imageCount >= 4) {
+      btnPic.disabled = true;
+      btnPic.classList.add('disabled');
+      btnPic.title = 'Limit of 4 Picture Elements reached';
+    } else {
+      btnPic.disabled = false;
+      btnPic.classList.remove('disabled');
+      btnPic.title = 'Add Picture Element';
+    }
+  }
 }
 
 function fetchState(cb) {
@@ -488,6 +618,7 @@ function renderTracks() {
     var card = document.getElementById('track-' + gSelectedTrackId);
     if (card) card.classList.add('selected-highlight');
   }
+  updateAddButtonsState();
 }
 
 function buildTrack(t) {
@@ -586,6 +717,7 @@ function buildTrack(t) {
       '<span class="track-label" id="tLabel-' + t.id + '">' + esc(t.image ? t.image.split('/').pop() : '(no image)') + '</span>' +
       '<span class="anim-badge"  id="tBadge-' + t.id + '">' + animLabel + '</span>' +
       '<button class="tog' + (t.enabled ? ' on' : '') + '" id="tTog-' + t.id + '"></button>' +
+      '<button class="track-delete-btn" id="tDel-' + t.id + '" title="Delete Element">🗑️</button>' +
       '<span class="drag-handle" style="margin-left: 4px; font-size: 16px; user-select: none; color: var(--muted);" title="Drag to reorder">☰</span>' +
       '</div>' +
       '<div class="track-body" id="tbody-' + t.id + '" style="' + displayStyle + '">' +
@@ -717,6 +849,16 @@ function buildTrack(t) {
       openAudioModal(t.id, 'audioEnd');
     });
 
+    var delBtn = wrap.querySelector('#tDel-' + t.id);
+    if (delBtn) {
+      delBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (confirm('Delete this element?')) {
+          deleteTrack(t.id);
+        }
+      });
+    }
+
     var dragHandle = wrap.querySelector('.drag-handle');
     if (dragHandle) {
       dragHandle.addEventListener('mouseenter', function () {
@@ -753,6 +895,7 @@ function buildTrack(t) {
     '<span class="track-label" id="tLabel-' + t.id + '">' + esc(t.text || '(empty)') + '</span>' +
     '<span class="anim-badge"  id="tBadge-' + t.id + '">' + animLabel + '</span>' +
     '<button class="tog' + (t.enabled ? ' on' : '') + '" id="tTog-' + t.id + '"></button>' +
+    '<button class="track-delete-btn" id="tDel-' + t.id + '" title="Delete Element">🗑️</button>' +
     '<span class="drag-handle" style="margin-left: 4px; font-size: 16px; user-select: none; color: var(--muted);" title="Drag to reorder">☰</span>' +
     '</div>' +
     '<div class="track-body" id="tbody-' + t.id + '" style="' + displayStyle + '">' +
@@ -981,6 +1124,16 @@ function buildTrack(t) {
   wrap.querySelector('#tao-' + t.id).addEventListener('click', function () {
     openAudioModal(t.id, 'audioEnd');
   });
+
+  var delBtn = wrap.querySelector('#tDel-' + t.id);
+  if (delBtn) {
+    delBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (confirm('Delete this element?')) {
+        deleteTrack(t.id);
+      }
+    });
+  }
 
   var dragHandle = wrap.querySelector('.drag-handle');
   if (dragHandle) {
