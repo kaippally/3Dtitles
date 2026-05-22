@@ -1831,3 +1831,60 @@ function filterTemplates(query) {
     }
   });
 }
+
+/* ── Clipboard paste handler ─────────────────────────────────────────────── */
+window.addEventListener('paste', function (e) {
+  var items = (e.clipboardData || e.originalEvent.clipboardData).items;
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type.indexOf('image') !== -1) {
+      var file = items[i].getAsFile();
+      if (file) {
+        uploadPastedImage(file);
+      }
+      break;
+    }
+  }
+});
+
+function uploadPastedImage(file) {
+  var reader = new FileReader();
+  reader.onload = function (e) {
+    var base64Data = e.target.result;
+    var name = 'pasted_' + Date.now() + '.png';
+
+    var tLabel = $id('tLabel-4');
+    if (tLabel) {
+      tLabel.textContent = 'Uploading pasted image...';
+    }
+
+    fetch('/api/image/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        data: base64Data
+      })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.ok) {
+          var track = findTrack(4);
+          if (track) {
+            track.image = '/images/' + name;
+            track.enabled = true;
+            renderTracks();
+            selectTrack(4);
+            schedulePush();
+          }
+        } else {
+          alert('Upload failed: ' + (res.error || 'unknown error'));
+          renderTracks();
+        }
+      })
+      .catch(function (err) {
+        alert('Upload error: ' + err.message);
+        renderTracks();
+      });
+  };
+  reader.readAsDataURL(file);
+}
