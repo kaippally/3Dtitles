@@ -5,6 +5,9 @@ var gDirty = false;
 var gFonts = [];
 var gPushTimer = null;
 var gSpinPaused = false;
+var gUndoStack = [];
+var gRedoStack = [];
+var MAX_HISTORY = 10;
 
 var PRESETS = [
   { id: 'crashLandTop', label: 'Crash Land (Top)' },
@@ -53,6 +56,70 @@ function selectTrack(trackId) {
     if (card) card.classList.add('selected-highlight');
   }
   updatePreview();
+}
+
+function saveUndoState() {
+  if (!gState) return;
+  var stateClone = JSON.parse(JSON.stringify(gState));
+  
+  if (gUndoStack.length > 0) {
+    if (JSON.stringify(gUndoStack[gUndoStack.length - 1]) === JSON.stringify(stateClone)) {
+      return;
+    }
+  }
+  
+  gUndoStack.push(stateClone);
+  if (gUndoStack.length > MAX_HISTORY) {
+    gUndoStack.shift();
+  }
+  gRedoStack = [];
+}
+
+function undo() {
+  if (gUndoStack.length === 0) return;
+  
+  if (gPushTimer !== null) {
+    clearTimeout(gPushTimer);
+    pushState();
+  }
+  
+  var currentState = JSON.parse(JSON.stringify(gState));
+  var previousState = gUndoStack.pop();
+  
+  gRedoStack.push(currentState);
+  if (gRedoStack.length > MAX_HISTORY) {
+    gRedoStack.shift();
+  }
+  
+  gState = previousState;
+  restoreStateToUI();
+}
+
+function redo() {
+  if (gRedoStack.length === 0) return;
+  
+  var currentState = JSON.parse(JSON.stringify(gState));
+  var nextState = gRedoStack.pop();
+  
+  gUndoStack.push(currentState);
+  if (gUndoStack.length > MAX_HISTORY) {
+    gUndoStack.shift();
+  }
+  
+  gState = nextState;
+  restoreStateToUI();
+}
+
+function restoreStateToUI() {
+  renderTracks();
+  updateGlobalUI();
+  updatePreview();
+  if (gSelectedTrackId !== null) {
+    if (!gState.tracks.some(function (t) { return t.id === gSelectedTrackId; })) {
+      gSelectedTrackId = null;
+    }
+  }
+  pushState();
 }
 
 /* ── Boot ──────────────────────────────────────────────────────────────────── */
@@ -118,6 +185,8 @@ function wireButtons() {
       closeModal('imageModal');
     }
     if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); fileSave(); }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+    if ((e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); redo(); }
   });
 
   // Global Scene Settings wiring
@@ -342,6 +411,8 @@ function fetchState(cb) {
   fetch('/api/state')
     .then(function (r) { return r.json(); })
     .then(function (d) {
+      gUndoStack = [];
+      gRedoStack = [];
       gState = normalizeState(d);
       if (cb) cb();
     })
@@ -360,6 +431,8 @@ function fetchInitialState(cb) {
             return r.json();
           })
           .then(function (data) {
+            gUndoStack = [];
+            gRedoStack = [];
             gState = normalizeState(data);
             setFilename(name);
             if (cb) cb();
@@ -866,11 +939,15 @@ function buildTrack(t) {
 /* ── Push state to server (debounced 400 ms) ───────────────────────────────── */
 function schedulePush() {
   markDirty();
+  if (gPushTimer === null) {
+    saveUndoState();
+  }
   clearTimeout(gPushTimer);
   gPushTimer = setTimeout(pushState, 400);
 }
 
 function pushState() {
+  gPushTimer = null;
   if (!gState) return;
   var autoTriggerEl = $id('chkAutoTrigger');
   var autoTrigger = autoTriggerEl ? autoTriggerEl.checked : true;
@@ -917,6 +994,8 @@ function loadScene(name) {
       return r.json();
     })
     .then(function (data) {
+      gUndoStack = [];
+      gRedoStack = [];
       gState = normalizeState(data);
       setFilename(name);
       renderTracks();
