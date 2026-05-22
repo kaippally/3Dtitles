@@ -52,16 +52,7 @@ function selectTrack(trackId) {
     var card = document.getElementById('track-' + trackId);
     if (card) card.classList.add('selected-highlight');
   }
-  if (pvSelectionHelper) {
-    if (pvGroup) pvGroup.remove(pvSelectionHelper);
-    pvSelectionHelper = null;
-  }
-  if (trackId !== null && pvGroup && gState) {
-    var idx = gState.tracks.findIndex(function (t) { return t.id === trackId; });
-    if (idx >= 0 && pvMeshes[idx]) {
-      drawSelectionHelper(pvMeshes[idx], findTrack(trackId));
-    }
-  }
+  updatePreview();
 }
 
 /* ── Boot ──────────────────────────────────────────────────────────────────── */
@@ -143,9 +134,7 @@ function wireButtons() {
   var btnResetView = $id('btnResetView');
   if (btnResetView) {
     btnResetView.addEventListener('click', function () {
-      if (pvGroup) {
-        pvGroup.rotation.set(0, 0, 0);
-      }
+      // 2D Preview does not have camera rotation to reset.
     });
   }
 
