@@ -1378,11 +1378,11 @@ function getTrackBounds(t, ctx) {
     
     var align = t.align || 'center';
     if (align === 'left') {
-      minX = -w_px;
-      maxX = 0;
-    } else if (align === 'right') {
       minX = 0;
       maxX = w_px;
+    } else if (align === 'right') {
+      minX = -w_px;
+      maxX = 0;
     } else {
       minX = -w_px / 2;
       maxX = w_px / 2;
@@ -1752,9 +1752,9 @@ function updatePreview() {
     
     var align = t.align || 'center';
     if (align === 'left') {
-      pvCtx.textAlign = 'right';
-    } else if (align === 'right') {
       pvCtx.textAlign = 'left';
+    } else if (align === 'right') {
+      pvCtx.textAlign = 'right';
     } else {
       pvCtx.textAlign = 'center';
     }
