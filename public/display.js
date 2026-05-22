@@ -15,8 +15,7 @@
 let socket = null;
 let scene, camera, renderer;
 let fontLoader;
-let fontCache  = {};   // Helvetiker cache   { url → THREE.Font }
-let shapeCache = {};   // shaped-path cache  { fontId|||text → shapeData }
+let fontCache  = {};   // font cache   { url → THREE.Font }
 let activeState = null;
 let trackMeshes = {};
 
@@ -92,85 +91,138 @@ function connectSocket() {
   socket.onclose = () => { console.warn('[Socket] lost — reconnecting'); setTimeout(connectSocket, 2000); };
 }
 
-/* ── Font loading: Helvetiker path ────────────────────────────────────────── */
-function loadBuiltinFont(track, cb) {
-  const url = '/vendor/fonts/helvetiker_regular.typeface.json';
-  if (fontCache[url]) { cb(fontCache[url]); return; }
-  fontLoader.load(url, f => { fontCache[url] = f; cb(f); }, undefined,
-    e => console.error('[FontLoader]', e));
-}
+function convertUnicodeToCustomASCII(unicodeText) {
+    if (!unicodeText) return '';
 
-/* ── Font loading: custom font path (shape API) ───────────────────────────── */
-function fetchShapeData(fontId, text, cb) {
-  const key = fontId + '|||' + text;
-  if (shapeCache[key]) { cb(shapeCache[key]); return; }
-  fetch('/api/shape', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ fontId, text }),
-  })
-    .then(r => r.json())
-    .then(data => { shapeCache[key] = data; cb(data); })
-    .catch(e  => { console.error('[shape fetch]', e); cb(null); });
-}
+    let text = unicodeText;
 
-/* ── Convert shaped path commands → ExtrudeGeometry ─────────────────────── */
-function commandsToGeometry(shapeData, track) {
-  const { commands, ascender, descender } = shapeData;
-  const fontHeight = ascender - descender;
-  const scale = (track.size * 0.65) / fontHeight;
+    // --- STEP 1: Apply Unicode Normalization Rules ---
+    const normalizations = [
+        ['ൻറ', 'ന്റ'], ['ന്പ', 'മ്പ'], ['ററ', 'റ്റ'], ['റ്', 'ർ'],
+        ['ണ്', 'ൺ'], ['ന്', 'ൻ'], ['ര്', 'ർ'], ['ല്', 'ൽ'], ['ള്', 'ൾ'],
+        ['ക്', 'ൿ'], ['െെ', 'ൈ'], ['ാെ', 'ൊ'], ['ാേ', 'ോ'],
+        ['ൗെ', 'ൌ'], ['എെ', 'ഐ'], ['ഇൗ', 'ഈ'], ['ഉൗ', 'ഊ'], ['ഒൗ', 'ഔ']
+    ];
+    
+    normalizations.forEach(([from, to]) => {
+        text = text.replace(new RegExp(from, 'g'), to);
+    });
 
-  // THREE.ShapePath correctly handles multiple sub-paths and determines
-  // which are outer contours vs holes using winding order.
-  const sp = new THREE.ShapePath();
-  for (const cmd of commands) {
-    switch (cmd.type) {
-      case 'M': sp.moveTo(cmd.x*scale, cmd.y*scale); break;
-      case 'L': sp.lineTo(cmd.x*scale, cmd.y*scale); break;
-      case 'Q': sp.quadraticCurveTo(cmd.x1*scale,cmd.y1*scale, cmd.x*scale,cmd.y*scale); break;
-      case 'C': sp.bezierCurveTo(cmd.x1*scale,cmd.y1*scale, cmd.x2*scale,cmd.y2*scale, cmd.x*scale,cmd.y*scale); break;
-      case 'Z': if (sp.currentPath) sp.currentPath.closePath(); break;
+    if (text.normalize) {
+        text = text.normalize('NFC');
     }
-  }
-  // isCCW=true: outer contours wind CCW in Y-up space (TrueType convention)
-  const shapes = sp.toShapes(true);
-  const geo = new THREE.ExtrudeGeometry(shapes, {
-    depth:          track.depth * 0.65,
-    bevelEnabled:   track.bevel,
-    bevelThickness: 0.02,
-    bevelSize:      0.015,
-    bevelSegments:  3,
-    curveSegments:  8,
-  });
-  geo.center();
-  return geo;
+
+    // --- STEP 2: Complex Sequential Combinations (Pre-Vowels & Split Vowels) ---
+    // Handle the visual layout logic where signs wrap *around* or go *before* the letter
+    const complexReplacements = [
+        // 3-Character Word Specific Constructs
+        { target: 'മുന്ദ്രണം', replace: 'മാ്ന്ദ്രണം' }, // Helper hook for custom sub-parsing if needed
+        
+        // Split Vowel Combinations (Typewriter visual positioning)
+        { pattern: /([ക-ഹ]|A|B|C|E|F|G|H|I|J|K|L|M|N|O|P|T|U|a|f|g|i|j|m|o|p|q|r|s|t|u|v|w|x|y|z|\{)ൊ/g, replace: 'æ$1Þ' }, // æ + char + Þ
+        { pattern: /([ക-ഹ]|A|B|C|E|F|G|H|I|J|K|L|M|N|O|P|T|U|a|f|g|i|j|m|o|p|q|r|s|t|u|v|w|x|y|z|\{)ോ/g, replace: 'ç$1Þ' }, // ç + char + Þ
+        { pattern: /([ക-ഹ]|A|B|C|E|F|G|H|I|J|K|L|M|N|O|P|T|U|a|f|g|i|j|m|o|p|q|r|s|t|u|v|w|x|y|z|\{)ൌ/g, replace: 'æ$1ì' }, // æ + char + ì
+        
+        // Pre-Vowel Signs (Shift to the front of the syllable block)
+        { pattern: /([ക-ഹ]|A|B|C|E|F|G|H|I|J|K|L|M|N|O|P|T|U|a|f|g|i|j|m|o|p|q|r|s|t|u|v|w|x|y|z|\{)െ/g, replace: 'æ$1' }, // Left swing e
+        { pattern: /([ക-ഹ]|A|B|C|E|F|G|H|I|J|K|L|M|N|O|P|T|U|a|f|g|i|j|m|o|p|q|r|s|t|u|v|w|x|y|z|\{)േ/g, replace: 'ç$1' }, // Left swing E
+        { pattern: /([ക-ഹ]|A|B|C|E|F|G|H|I|J|K|L|M|N|O|P|T|U|a|f|g|i|j|m|o|p|q|r|s|t|u|v|w|x|y|z|\{)ൈ/g, replace: 'è$1' }, // Left swing Ai
+    ];
+
+    complexReplacements.forEach(cfg => {
+        text = text.replace(cfg.pattern || cfg.target, cfg.replace);
+    });
+
+    // --- STEP 3: Multi-character Conjuncts & Core Dictionary Mapping ---
+    // Extracted directly from your schema, sorted by length to protect strings like "ന്ത്" from breaking early
+    const dictionary = [
+        // Complex strings/combinations
+        ['ന്ദ്ര', 'ന്ദ്\u0D4D\u0D30'], // Split ndra structurally
+        ['കൃ', 'മ\u0D43'],
+        ['ഷ്ണ', 'ക്ഷ്ണ'],
+        
+        // Exact Glyph Dictionary Mappings Provided
+        ['ശ്ശ', '€'], ['ശ്ശം', 'Û'], ['വ്വ', 'Œ'], ['ച്ച', '‚'], ['ല്ല', 'ˆ'], ['്ല', 'ï'],
+        ['ക്ക', 'A'], ['ങ്ങ', 'B'], ['ങ്ക', 'C'], ['ഞ്ഞ', 'E'], ['ഞ്ച', 'F'], ['ട്ട', 'G'], 
+        ['ണ്ണ', 'H'], ['ണ്ട', 'I'], ['ത്ത', 'J'], ['ന്ന', 'K'], ['ന്ത', 'L'], ['പ്പ', 'M'], 
+        ['മ്മ', 'N'], ['മ്പ', 'O'], ['ഗ്ഗ', 'P'], ['സ്സ', 'T'], ['ള്ള', 'U'], ['ര്', 'V'], 
+        ['ല്', 'W'], ['ന്', 'X'], ['ണ്', 'Y'], ['ള്', 'Z'], ['ന്റ', 'a'], ['്വ', 'b'], 
+        ['്യ', 'c'], ['്ര', 'd'], ['ക്ഷ', 'f'], ['ദ്ദ', 'g'], ['ദ്ധ', 'i'], ['ത്ഥ', 'j'], 
+        ['ണ്ഡ', 'm'], ['ഗ്ന', 'o'], ['ണ്മ', 'p'], ['ത്ഭ', 'q'], ['r', 'r'], ['ന്ഥ', 's'], 
+        ['ന്ധ', 't'], ['ഗ്മ', 'u'], ['ത്മ', 'v'], ['ന്ദ', 'w'], ['റ്റ', 'x'], ['ത്ന', 'y'], 
+        ['nm', 'z'], ['ള', '{'], ['മ്ല', '|'], ['ഖ', '~'], ['്', '¡'], ['ം', '¢'], 
+        ['ഃ', '£'], ['അ', '¥'], ['സ്ല', 'Š'], ['ഇ', '§'], ['ഉ', '©'], ['ഊ', 'ª'], 
+        ['ഋ', '«'], ['എ', '®'], ['ഏ', '¯'], ['ഐ', '°'], ['ഗ്ല', '±'], ['ഒ', '²'], 
+        ['ഓ', '³'], ['ക', 'µ'], ['ഖ', '¶'], ['ഗ', '·'], ['ങ', '¹'], ['ച', 'º'], 
+        ['ഛ', '»'], ['ട', '¿'], ['ഠ', 'À'], ['ഡ', 'Á'], ['ഢ', 'Â'], ['ണ', 'Ã'], 
+        ['ത', 'Ä'], ['ഥ', 'Å'], ['ദ', 'Æ'], ['ധ', 'Ç'], ['ന', 'È'], ['പ', 'É'], 
+        ['ഫ', 'Ë'], ['ബ', 'Ì'], ['ഭ', 'Í'], ['മ', 'Î'], ['യ', 'Ï'], ['ക്ല', 'Ð'], 
+        ['വ', 'Õ'], ['ശ', 'Ö'], ['×', 'ഷ'], ['ഷ', '×'], ['സ', 'Ø'], ['ഹ', 'Ù'], 
+        ['റ്റ', 'Ú'], ['ല', 'Ü'], ['ഴ', 'Ý'], ['റ', 'ù'], ['ആ', '¦'], ['ജ', '¼'], 
+        ['ഞ', '¾'],
+        
+        // Dependent Modifiers
+        ['ാ', 'Þ'], ['ി', 'ß'], ['ീ', 'à'], ['ു', 'á'], ['ൂ', 'â'], ['ൃ', 'ã'],
+        ['്', 'í'], ['ി', 'ò'], ['ു', 'ó'], ['ൂ', 'ô'], ['ര', 'ø']
+    ];
+
+    // Greedily iterate over mapping array
+    dictionary.forEach(([unicodeChar, asciiChar]) => {
+        text = text.replace(new RegExp(unicodeChar, 'g'), asciiChar);
+    });
+
+    // --- STEP 4: Post-Processing / Punctuation Filter ---
+    // Optional rule based on clean config $remove_punctuation=true
+    text = text.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
+
+    return text;
 }
 
-/* ── Build mesh for one track (chooses path based on font) ───────────────── */
-function buildTrackMesh(track, cb) {
-  const text = track.text || ' ';
+/* ── Font loading: loads built-in or custom font JSON ────────────────────── */
+function loadFont(fontId, cb) {
+  const url = fontId === 'helvetiker'
+    ? '/vendor/fonts/helvetiker_regular.typeface.json'
+    : `/fonts/${fontId}_typeface.json`;
 
-  if (track.font === 'helvetiker') {
-    // ── Built-in path: THREE.TextGeometry ──
-    loadBuiltinFont(track, font => {
-      try {
-        const geo = new THREE.TextGeometry(text, {
-          font, size: track.size * 0.65, height: track.depth * 0.65,
-          curveSegments: 8, bevelEnabled: track.bevel,
-          bevelThickness: 0.02, bevelSize: 0.015, bevelSegments: 3,
-        });
-        geo.center();
-        cb(geo);
-      } catch (e) { console.error('[Display] TextGeometry error', e); cb(null); }
-    });
-  } else {
-    // ── Custom font path: shape API → ExtrudeGeometry ──
-    fetchShapeData(track.font, text, data => {
-      if (!data || data.useBuiltinFont) { cb(null); return; }
-      try { cb(commandsToGeometry(data, track)); }
-      catch (e) { console.error('[Display] commandsToGeometry error', e); cb(null); }
-    });
+  if (fontCache[url]) {
+    cb(fontCache[url]);
+    return;
   }
+  fontLoader.load(url, f => {
+    fontCache[url] = f;
+    cb(f);
+  }, undefined, e => {
+    console.error('[FontLoader] Error loading font:', fontId, e);
+    cb(null);
+  });
+}
+
+/* ── Build mesh for one track ─────────────────────────────────────────────── */
+function buildTrackMesh(track, cb) {
+  let text = track.outputText || track.text || ' ';
+  if (!track.outputText && track.font && track.font.toLowerCase().includes('manorama')) {
+    text = convertUnicodeToCustomASCII(text);
+  }
+  loadFont(track.font, font => {
+    if (!font) { cb(null); return; }
+    try {
+      const geo = new THREE.TextGeometry(text, {
+        font,
+        size: track.size * 0.65,
+        height: track.depth * 0.65,
+        curveSegments: 8,
+        bevelEnabled: track.bevel,
+        bevelThickness: 0.02,
+        bevelSize: 0.015,
+        bevelSegments: 3,
+      });
+      geo.center();
+      cb(geo);
+    } catch (e) {
+      console.error('[Display] TextGeometry error', e);
+      cb(null);
+    }
+  });
 }
 
 /* ── Rebuild scene meshes ─────────────────────────────────────────────────── */
