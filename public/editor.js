@@ -539,16 +539,35 @@ function initPreview() {
 function resizePreview() {
   if (!pvRenderer || !pvCamera) return;
   var canvas = $id('previewCanvas');
+  var container = canvas.parentElement;
+  if (!container) return;
+
+  var aspectParts = ['16', '9'];
   if (gState && gState.aspectRatio) {
     var parts = gState.aspectRatio.split('x');
-    if (parts.length === 2) {
-      canvas.style.aspectRatio = parts[0] + ' / ' + parts[1];
-    }
-  } else {
-    canvas.style.aspectRatio = '16 / 9';
+    if (parts.length === 2) aspectParts = parts;
   }
-  var W = canvas.clientWidth;
-  var H = canvas.clientHeight;
+  var targetRatio = parseFloat(aspectParts[0]) / parseFloat(aspectParts[1]);
+  var padding = 24; 
+  var maxW = container.clientWidth - padding;
+  var maxH = container.clientHeight - padding;
+  if (maxW <= 0 || maxH <= 0) {
+    maxW = container.clientWidth;
+    maxH = container.clientHeight;
+  }
+
+  var containerRatio = maxW / maxH;
+  var W, H;
+  if (containerRatio > targetRatio) {
+    H = maxH;
+    W = H * targetRatio;
+  } else {
+    W = maxW;
+    H = W / targetRatio;
+  }
+
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
   pvCamera.aspect = W / H;
   pvCamera.updateProjectionMatrix();
   pvRenderer.setSize(W, H, false);
