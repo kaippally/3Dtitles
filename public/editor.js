@@ -1275,9 +1275,19 @@ function initPreview() {
   pvCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
   pvCamera.position.set(0, 0, 10);
 
-  pvRenderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
-  pvRenderer.setPixelRatio(devicePixelRatio);
-  pvRenderer.setClearColor(0x000000, 0);
+  try {
+    pvRenderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+    pvRenderer.setPixelRatio(devicePixelRatio);
+    pvRenderer.setClearColor(0x000000, 0);
+  } catch (e) {
+    console.error('WebGLRenderer initialization failed:', e);
+    var warning = document.createElement('div');
+    warning.style.cssText = 'position:absolute; top:40%; left:10px; right:10px; background:rgba(255,0,0,0.85); color:white; padding:15px; border-radius:4px; text-align:center; font-weight:bold; z-index:100; font-family:sans-serif;';
+    warning.innerHTML = '⚠️ WebGL initialization failed. 3D Preview is disabled, but timeline editing and saving still work.';
+    canvas.parentElement.style.position = 'relative';
+    canvas.parentElement.appendChild(warning);
+    return;
+  }
 
   pvScene.add(new THREE.AmbientLight(0xffffff, 0.6));
   var dl = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -1555,7 +1565,7 @@ function pvAnimLoop() {
 }
 
 function updatePreview() {
-  if (!pvScene || !gState) return;
+  if (!pvScene || !pvLoader || !gState) return;
 
   if (pvSelectionHelper) {
     if (pvGroup) pvGroup.remove(pvSelectionHelper);
